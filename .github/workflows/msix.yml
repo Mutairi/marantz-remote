@@ -1,0 +1,38 @@
+name: Windows Store MSIX
+on:
+  push:
+    branches: [main]
+    paths: ['windows/msix/**', '.github/workflows/msix.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download tested executable
+        uses: actions/download-artifact@v4
+        with:
+          name: Marantz-Remote-Windows
+          run-id: 39949265092
+          github-token: ${{ github.token }}
+          path: input
+      - name: Prepare executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exe = Get-ChildItem input -Recurse -Filter Marantz-Remote.exe | Select-Object -First 1
+          if (-not $exe) { throw 'Tested executable missing' }
+          Copy-Item $exe.FullName dist/Marantz-Remote.exe
+      - name: Build and validate Store package
+        shell: pwsh
+        run: ./windows/msix/build.ps1 -IdentityName 'throy.MarantzRemotebyTHROY' -Publisher 'CN=E25A6066-EC06-4D85-9939-64463C14B4CB' -PublisherDisplayName 'throy'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Marantz-Remote-Store-MSIX-1.2.1.0
+          path: dist/*.msix
+          if-no-files-found: error
+          retention-days: 30

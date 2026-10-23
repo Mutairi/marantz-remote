@@ -37,3 +37,7 @@ dolby-original-confirmed.png
 .vscode/
 .DS_Store
 Thumbs.db
+
+msix-stage/
+msix-verified/
+*.msix
