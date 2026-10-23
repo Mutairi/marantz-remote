@@ -28,7 +28,7 @@ jobs:
           if ($process.ExitCode -ne 0) { throw 'Smoke test failed' }
       - name: Build and validate Store package
         shell: pwsh
-        run: ./windows/msix/build.ps1 -IdentityName 'throy.MarantzRemotebyTHROY' -Publisher 'CN=E25A6066-EC06-4D85-9939-64463C14B4CB' -PublisherDisplayName 'throy'
+        run: ./windows/msix/build.ps1 -IdentityName 'throy.MarantzAVRemote' -Publisher 'CN=E25A6066-EC06-4D85-9939-64463C14B4CB' -PublisherDisplayName 'throy'
       - uses: actions/upload-artifact@v4
         with:
           name: Marantz-Remote-Store-MSIX-1.2.1.0
