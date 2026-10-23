@@ -92,7 +92,7 @@ def sound_mode_list(root):
 class Receiver:
     def __init__(self,host='10.10.10.40',port=23):
         self.host,self.port=host,port;self.sock=None;self.lock=threading.RLock();self.stop=threading.Event()
-        self.state={'connected':False,'power':'Unknown','volume':None,'mute':None,'input':'Unknown','mode':'Unknown','format':'Unknown','error':'Connecting…','inputs':[],'modes':[],'name':'Marantz','host':host,'last_update':None,'command':None}
+        self.state={'connected':False,'power':'Unknown','volume':None,'mute':None,'tone':None,'bass':None,'input':'Unknown','mode':'Unknown','format':'Unknown','error':'Connecting…','inputs':[],'modes':[],'name':'Marantz','host':host,'last_update':None,'command':None}
         self.log=deque(maxlen=100);self.last_received=0;self.volume_received=0;self.mode_batch={};self.control_port=8080
     def snapshot(self):
         with self.lock:
@@ -108,6 +108,8 @@ class Receiver:
                 self.volume_received=time.monotonic();n=line[2:];self.state['volume']=int(n[:2])+(int(n[2])/10 if len(n)==3 else 0)-80;field='volume'
             elif line in ('MUON','MUOFF'): self.state['mute']=line=='MUON';field='mute'
             elif line in ('PWON','PWSTANDBY'): self.state['power']='On' if line=='PWON' else 'Standby';field='power'
+            elif line in ('PSTONE CTRL ON','PSTONE CTRL OFF'): self.state['tone']=line.endswith(' ON');field='tone'
+            elif re.fullmatch(r'PSBAS \d{2}',line): self.state['bass']=int(line[6:])-50;field='bass'
             elif line.startswith('SI'): self.state['input']=line[2:];field='input'
             elif line.startswith('MS') and not line.startswith('MSQUICK'): self.state['mode']=line[2:];field='mode'
             elif line.startswith('SYSMI '): self.state['mode']=line[6:].strip();field='mode'
@@ -162,6 +164,16 @@ class Receiver:
                 if not -80<=target<=18 or target*2!=round(target*2): raise ValueError('Invalid volume')
                 if target>limit and target>current: raise ValueError(f'Volume limit reached ({limit:g} dB)')
                 cmd=volume_command(target);field='volume';expected=target
+            elif cmd in ('PSTONE CTRL ON','PSTONE CTRL OFF','PSBAS UP','PSBAS DOWN'):
+                if mode_key(self.state['mode']) in ('PUREDIRECT','DIRECT'): raise ValueError('Tone controls are unavailable in Direct or Pure Direct')
+                if self.state['tone'] is None: raise ValueError('Waiting for receiver tone status')
+                if cmd.startswith('PSTONE'):
+                    field='tone';expected=cmd.endswith(' ON')
+                else:
+                    if not self.state['tone'] or self.state['bass'] is None: raise ValueError('Enable Tone Control before adjusting bass')
+                    expected=self.state['bass']+(1 if cmd.endswith('UP') else -1)
+                    if not -6<=expected<=6: raise ValueError('Bass limit reached')
+                    cmd=f'PSBAS {expected+50:02d}';field='bass'
             elif cmd in ('MUON','MUOFF'): field='mute';expected=cmd=='MUON'
             elif cmd in ('PWON','PWSTANDBY'): field='power';expected='On' if cmd=='PWON' else 'Standby'
             elif cmd.startswith('SI') and cmd[2:] in {x['value'] for x in self.state['inputs']}: field='input';expected=cmd[2:]
@@ -176,7 +188,7 @@ class Receiver:
                     self.select_indexed_mode(p)
                 else:
                     self.send(cmd)
-                self.send({'volume':'MV?','mute':'MU?','power':'PW?','input':'SI?','mode':'MS?'}[field])
+                self.send({'volume':'MV?','mute':'MU?','power':'PW?','input':'SI?','mode':'MS?','tone':'PSTONE CTRL ?','bass':'PSBAS ?'}[field])
             except (OSError,ValueError,ET.ParseError) as error:
                 p.update(status='unconfirmed',message='Selection could not be confirmed. No automatic retry was made.')
                 raise ValueError(str(error)) from error
@@ -213,7 +225,7 @@ class Receiver:
                     while not self.stop.is_set():
                         if time.monotonic()-self.last_received>25: raise ConnectionError('Receiver stopped responding; reconnecting')
                         if time.monotonic()-last>8:
-                            for q in ('PW?','MV?','MU?','SI?','MS?','OPSMLALL ?'): self.send(q)
+                            for q in ('PW?','MV?','MU?','SI?','MS?','OPSMLALL ?','PSTONE CTRL ?','PSBAS ?'): self.send(q)
                             last=time.monotonic()
                         try: data=s.recv(8192)
                         except socket.timeout: continue

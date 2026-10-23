@@ -10,6 +10,19 @@ class RemoteTests(unittest.TestCase):
         xml=ET.fromstring('<rx><cmd><functionrename><list><name>Blu-ray</name><rename>DIABLO   </rename></list><list><name>GAME1</name><rename>PS5</rename></list><list><name>CD</name><rename>   </rename></list></functionrename></cmd></rx>')
         with patch.object(server,'read_xml',return_value=xml):
             self.assertEqual(server.renamed_inputs('10.10.10.40',8080),{'BD':'DIABLO','GAME':'PS5'})
+    def test_bass_controls_confirm_and_enforce_bounds(self):
+        r=self.receiver();r.receive('MSSTEREO');r.receive('PSTONE CTRL OFF');r.receive('PSBAS 50')
+        with self.assertRaisesRegex(ValueError,'Enable'):r.execute('PSBAS UP',-10)
+        r.execute('PSTONE CTRL ON',-10);r.receive('PSTONE CTRL ON')
+        self.assertEqual(r.state['command']['status'],'confirmed')
+        r.execute('PSBAS UP',-10)
+        self.assertEqual(r.state['command']['wire'],'PSBAS 51')
+        r.receive('PSBAS 51');self.assertEqual(r.state['bass'],1)
+        self.assertEqual(r.state['command']['status'],'confirmed')
+        r.receive('PSBAS 56')
+        with self.assertRaisesRegex(ValueError,'limit'):r.execute('PSBAS UP',-10)
+        r.receive('MSPURE DIRECT')
+        with self.assertRaisesRegex(ValueError,'unavailable'):r.execute('PSTONE CTRL ON',-10)
     def test_volume_parser(self):
         r=self.receiver()
         for line,value in [('MV00',-80),('MV455',-34.5),('MV80',0),('MV985',18.5)]:
