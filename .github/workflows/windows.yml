@@ -18,7 +18,7 @@ jobs:
       - name: Receiver regression tests
         run: python -m unittest -v test_server.py
       - name: Package standalone Windows app
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Marantz-Remote --paths . --add-data "index.html;." --add-data "logo.svg;." windows/app.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Marantz-Remote --icon windows/assets/marantz.ico --paths . --add-data "index.html;." --add-data "logo.svg;." windows/app.py
       - name: Smoke test packaged app
         shell: pwsh
         run: |
