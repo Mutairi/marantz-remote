@@ -10,3 +10,6 @@ preview.png
 local.properties
 *.jks
 *.keystore
+
+.remote-settings.json
+.remote-settings.tmp
