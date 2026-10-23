@@ -53,3 +53,7 @@ gradle testDebugUnitTest lintDebug assembleDebug
 GitHub Actions runs the browser tests and Android tests, lint and APK build. Firmware-specific receiver behavior and real Android device operation require hardware verification beyond these checks.
 
 The Marantz wordmark is from the manufacturer's public website. This is a personal, unofficial remote.
+
+## Windows app
+
+See [Windows app instructions](windows/README.md) for the compact standalone Windows executable, downloads, and build steps.

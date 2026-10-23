@@ -13,3 +13,6 @@ local.properties
 
 .remote-settings.json
 .remote-settings.tmp
+
+dist/
+*.spec

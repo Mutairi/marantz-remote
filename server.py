@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Local Marantz remote, review version. Python standard library only."""
-import concurrent.futures, ipaddress, json, math, re, secrets, socket, threading, time
+import concurrent.futures, ipaddress, json, math, os, re, secrets, socket, threading, time
 import urllib.request, urllib.parse
 import xml.etree.ElementTree as ET
 from collections import deque
@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 TOKEN=secrets.token_urlsafe(24)
-SETTINGS=ROOT/'.remote-settings.json'
+SETTINGS=Path(os.environ.get('MARANTZ_DATA_DIR',str(ROOT)))/'.remote-settings.json'
 INPUT_CODES={'CBL/SAT':'SAT/CBL','MEDIA PLAYER':'MPLAY','BLU-RAY':'BD','DVD':'DVD','GAME':'GAME','GAME1':'GAME','GAME2':'GAME2','AUX1':'AUX1','AUX2':'AUX2','TV AUDIO':'TV','CD':'CD','PHONO':'PHONO','TUNER':'TUNER','NETWORK':'NET','BLUETOOTH':'BT'}
 MODE_CODES={'STEREO':'STEREO','DIRECT':'DIRECT','PURE DIRECT':'PURE DIRECT','MULTI CH STEREO':'MCH STEREO','MULTI CH IN':'MULTI CH IN','DOLBY ATMOS':'DOLBY ATMOS','DOLBY AUDIO - DOLBY DIGITAL PLUS':'DOLBY DIGITAL +','DOLBY ATMOS/DSURR':'DOLBY DIGITAL','DOLBY SURROUND':'DOLBY AUDIO-DSUR','DTS SURROUND':'DTS SURROUND','DTS NEURAL:X':'DTS SURROUND'}
 def private_ip(value):

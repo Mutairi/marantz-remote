@@ -1,0 +1,36 @@
+name: Windows App
+on:
+  push:
+    paths: ['windows/**', 'server.py', 'test_server.py', 'index.html', 'logo.svg', '.github/workflows/windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r windows/requirements.txt
+      - name: Receiver regression tests
+        run: python -m unittest -v test_server.py
+      - name: Package standalone Windows app
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Marantz-Remote --paths . --add-data "index.html;." --add-data "logo.svg;." windows/app.py
+      - name: Smoke test packaged app
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ./dist/Marantz-Remote.exe -ArgumentList '--smoke-test' -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'App smoke test timed out' }
+          if ($process.ExitCode -ne 0) { throw "App smoke test failed: $($process.ExitCode)" }
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Marantz-Remote-Windows
+          path: |
+            dist/Marantz-Remote.exe
+            windows/README.md
+          if-no-files-found: error
+          retention-days: 30
