@@ -20,10 +20,10 @@ public class MainActivity extends Activity {
     private LinearLayout body;private TextView status,volume,source,mode,format,notice,log,title;
     private Button mute,scan,inputButton,modeButton;private ReceiverConnection connection;
     private SeekBar slider;private boolean tracking=false,commandPending=false;private Double currentVolume=null;private double volumeLimit=-10;
-    private long lastReply=0;private TextView lastUpdate,limitText;
+    private long lastReply=0;private TextView limitText;
     private List<ReceiverHttp.Choice> inputs=new ArrayList<>(),modes=new ArrayList<>();
     private final Handler ui=new Handler(Looper.getMainLooper());
-    private final Runnable freshness=new Runnable(){public void run(){if(!foreground)return;long age=lastReply==0?Long.MAX_VALUE:(System.currentTimeMillis()-lastReply)/1000;lastUpdate.setText(age==Long.MAX_VALUE?"Waiting for receiver response":"Last response · "+age+"s ago");enabled(connected);ui.postDelayed(this,1000);}};
+    private final Runnable freshness=new Runnable(){public void run(){if(!foreground)return;enabled(connected);ui.postDelayed(this,1000);}};
     private boolean connected=false,foreground=false,scanning=false;private Boolean muted=null;
     private LinearLayout soundPanel,connectionPanel;private Button toneButton,lfcButton,bassDown,bassUp,containmentButton,down,up;
     private Boolean tone=null,lfc=null;private Integer bass=null,containment=null;private String inputCode="",modeRaw="";private TextView bassValue,soundHint;
@@ -65,7 +65,6 @@ public class MainActivity extends Activity {
         containmentButton=inline(soundRow,"Level —",()->choose("Containment amount",new String[]{"1","2","3","4","5","6","7"},new String[]{"PSCNTAMT 01","PSCNTAMT 02","PSCNTAMT 03","PSCNTAMT 04","PSCNTAMT 05","PSCNTAMT 06","PSCNTAMT 07"}));containmentButton.setMinWidth(dp(90));
         soundHint=new TextView(this);soundHint.setTextSize(10);soundHint.setTextColor(MUTED);soundPanel.addView(soundHint);
         gap(20);text("INCOMING AUDIO",10,MUTED);format=text("—",14,GOLD);gap(16);
-        lastUpdate=text("Waiting for receiver response",11,MUTED);lastUpdate.setVisibility(View.GONE);
         notice=text("Controls follow the receiver’s reported inputs and listening modes.",12,MUTED);
         gap(16);body.addView(button("MORE SETTINGS ↗",()->openLink("http://"+host+"/")));
         gap(12);body.addView(button("Volume limit & connection ▾",()->connectionPanel.setVisibility(connectionPanel.getVisibility()==View.GONE?View.VISIBLE:View.GONE)));

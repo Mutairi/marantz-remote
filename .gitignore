@@ -1,24 +1,39 @@
+# Python and local environment
 __pycache__/
 *.py[cod]
-*.log
-preview.png
-.env
 .venv/
+.env
+.env.*
+!.env.example
+*.log
 
+# Android / Gradle
 .gradle/
 **/build/
 local.properties
 *.jks
 *.keystore
+*.apk
+*.aab
 
+# Windows packaging
+dist/
+*.spec
+*.exe
+
+# Receiver settings (never package local configuration)
 .remote-settings.json
 .remote-settings.tmp
 
-dist/
-*.spec
-
 # Local review captures
+preview.png
 review-preview.png
 github-upload.png
 android-build.png
 dolby-original-confirmed.png
+
+# Editor / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
