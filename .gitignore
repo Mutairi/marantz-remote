@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+*.log
+preview.png
+.env
+.venv/
