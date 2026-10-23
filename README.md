@@ -1,59 +1,55 @@
 # Marantz Remote
 
-A minimal personal remote for compatible Marantz receivers, with two separate apps:
+A minimal, unofficial Marantz remote. Warm charcoal, gold controls, and a direct connection to your receiver.
 
-- **Browser:** local Python server plus a browser interface, in the repository root.
-- **Android 1.1:** standalone native app in `android/`; no PC or server required.
+**[Windows app](windows/README.md) · [Android app](docs/android.md) · [Browser setup](docs/browser.md) · [Development](CONTRIBUTING.md)**
 
-Both provide power, volume and mute, receiver-reported inputs, listening-mode controls, command confirmation, reconnect handling, and an app volume limit. Discovery depends on the receiver and local-network multicast; manual private IPv4 entry is available. Not every Marantz model exposes the same control APIs.
+## Choose your app
 
-## Browser
+| Platform | Start here | Needs another computer? |
+| --- | --- | --- |
+| Windows 10/11 x64 | [Download a Windows build](https://github.com/Mutairi/marantz-remote/actions/workflows/windows.yml), extract, run `Marantz-Remote.exe` | No |
+| Android 8+ | [Download an Android build](https://github.com/Mutairi/marantz-remote/actions/workflows/android.yml), extract, install `app-debug.apk` | No |
+| Browser | Run `sh start.sh` with Python 3, then open [the remote](http://127.0.0.1:8765/) | Runs on the computer hosting it |
 
-Requires Python 3. Run:
+In GitHub Actions, open a successful run and download its platform artifact. Sign in to GitHub to access this private repository's downloads. Artifacts expire after 30 days; download a newer build or rebuild when needed.
 
-```sh
-sh start.sh
+## Controls
+
+All platforms offer power, volume, mute, receiver discovery, input selection, listening modes, and an app volume limit. Windows and browser share the same interface and backend; Android has its own native interface.
+
+| Feature | Browser / Windows | Android |
+| --- | --- | --- |
+| Volume slider and app limit | Yes | Yes |
+| Gold dial and volume presets | Yes | Not yet |
+| Custom receiver input names | Yes | Factory names |
+| Receiver-reported listening modes | Yes | Yes |
+| Tone Control and bass | Yes | Not yet |
+| Audyssey LFC and containment | Yes | Not yet |
+| Link to receiver Web Control | Yes | Not yet |
+
+Controls depend on receiver capabilities and listening mode. Direct and Pure Direct disable tone and LFC controls. The current implementation has been checked against a CINEMA 40; other models may provide fewer controls.
+
+## Repository layout
+
+```text
+index.html, logo.svg     Shared browser / Windows interface
+server.py, start.sh      Local receiver service and browser launcher
+test_server.py          Receiver and HTTP regression tests
+windows/                Windows shell, build dependencies, instructions
+android/                Native Android app and Java tests
+docs/                   Setup, compatibility, and security notes
+.github/workflows/      Separate browser checks and platform builds
 ```
 
-Open http://127.0.0.1:8765 on the same computer. Use **Change** to search or enter a receiver IP. The saved default for the original installation is `10.10.10.40`. Stop with Ctrl+C. No Python packages or passwords are needed.
+## Local network connection
 
-The browser server is loopback-only. Host, Origin, request token, XML, command and private-address validation restrict access. It does not expose the receiver to the internet or the rest of the LAN. Local settings live in ignored `.remote-settings.json`.
+Keep the device and receiver on the same trusted network, with receiver network control enabled. Use **Volume limit & connection → Change** on browser/Windows to discover a receiver or enter its private IPv4 address. No Marantz cloud account is needed.
 
-## Android
+The app limit defaults to **−10 dB** and applies only to commands from this app. It does not change the receiver's own limit or constrain other remotes. See [compatibility and security](docs/security.md).
 
-Requires Android 8 or newer and the receiver's Wi-Fi network. Download **Marantz-Remote-Android** from the latest successful **Actions → Android APK** run, extract the ZIP, and open `app-debug.apk`. Allow installation from your browser or file manager when Android prompts. Launch **Marantz Remote**, discover a receiver or enter its private IPv4 address.
+## Build status and testing
 
-Version 1.1 includes a volume slider, saved app limit, actual input discovery, receiver-reported mode choices, confirmed/unconfirmed command feedback, reply age and stale-status protection. It disconnects when backgrounded and reconnects when reopened. No cloud account, tracking or background service is used.
+GitHub Actions tests the Python backend, builds and smoke-tests the Windows executable, and tests/lints/builds Android. Windows GUI behavior on the ROG and Android behavior on a real phone still require device testing. Development downloads are unsigned Windows executables and debug-signed Android APKs.
 
-This is a test APK, not a Play Store release. Builds use debug signing; a new build may require uninstalling an older test build if the signing key differs. Artifacts expire after 30 days. Android hardware discovery, lifecycle and controls still need a test on your actual phone.
-
-## Listening modes and limits
-
-For indexed mode selection, the app reads the receiver's current HTTP AppCommand0300 genre list, selects the entry by its current index, then reads it back. A generic `OK` alone never confirms the selection. Mode lists are checked again before writing so old choices cannot silently select a different mode after the audio changes. The browser's **Dolby Digital Plus · original** and **Dolby Digital Plus + Dolby Surround** choices were both verified on CINEMA 40 with an active DD+ signal. Other mapped browser controls use TCP port 23; Android uses indexed HTTP mode selection where available and common Direct/Stereo commands as fallback.
-
-The configurable **app volume limit** defaults to −10 dB. It limits increases requested through this app, including direct slider values. It does not change the receiver's own maximum, constrain other controllers, or lower the present volume when edited. A command with no matching confirmation is not replayed automatically.
-
-Receiver network control must be enabled. Capabilities and indexed selection use HTTP port 8080 on tested CINEMA 40; models with different APIs may have reduced support. Guest Wi-Fi isolation, VPN routing, or another controller occupying the receiver connection can prevent access. Receiver control protocols are unencrypted: keep them confined to your trusted LAN.
-
-## Development and tests
-
-Browser regression tests:
-
-```sh
-python3 -m unittest -v test_server.py
-```
-
-Android requires JDK 17, Android SDK 35 and Gradle 8.11.1:
-
-```sh
-cd android
-gradle testDebugUnitTest lintDebug assembleDebug
-```
-
-GitHub Actions runs the browser tests and Android tests, lint and APK build. Firmware-specific receiver behavior and real Android device operation require hardware verification beyond these checks.
-
-The Marantz wordmark is from the manufacturer's public website. This is a personal, unofficial remote.
-
-## Windows app
-
-See [Windows app instructions](windows/README.md) for the compact standalone Windows executable, downloads, and build steps.
+Built by [THROY](https://www.instagram.com/throy/). This project is unofficial and is not affiliated with Marantz. The Marantz wordmark belongs to its owner. No software license has been selected for this repository.

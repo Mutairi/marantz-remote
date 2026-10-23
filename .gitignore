@@ -16,3 +16,9 @@ local.properties
 
 dist/
 *.spec
+
+# Local review captures
+review-preview.png
+github-upload.png
+android-build.png
+dolby-original-confirmed.png
