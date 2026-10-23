@@ -14,10 +14,11 @@ public final class ReceiverConnection implements AutoCloseable {
         default void feedback(boolean pending,String message){}
     }
     private final String host;private final Listener listener;private final ReceiverHttp http;
-    private final LinkedBlockingQueue<String> commands=new LinkedBlockingQueue<>(1);
+    private final LinkedBlockingQueue<String> commands=new LinkedBlockingQueue<>(40);
     private volatile boolean running=true,connected=false,waiting=false;private volatile Socket socket;
     private volatile double limit=-10;private volatile Double volume=null;private volatile long volumeAt=0,lastReceivedAt=0;
     private final Map<String,ReceiverHttp.Choice> advertised=new ConcurrentHashMap<>();
+    private volatile Boolean tone=null,lfc=null;private volatile Integer bass=null;private volatile String mode="";
     private String expected=null;private long deadline=0;
     public ReceiverConnection(String host,Listener listener){
         if(!Protocol.localAddress(host))throw new IllegalArgumentException("Private IPv4 required");
@@ -28,15 +29,19 @@ public final class ReceiverConnection implements AutoCloseable {
     public synchronized String submit(String cmd){
         if(!running||!connected)return "Receiver is disconnected. Retrying automatically.";
         if(System.currentTimeMillis()-lastReceivedAt>12000)return "Waiting for fresh receiver status.";
-        if(waiting)return "Wait for the current command to finish.";
+        if(waiting&&!cmd.matches("MV(UP|DOWN|[0-9]{2,3})|PSBAS (UP|DOWN)"))return "Wait for the current command to finish.";
         if((cmd.startsWith("SI")||cmd.startsWith("MODE:"))?!advertised.containsKey(cmd):!Protocol.allowed(cmd))return "This control is not advertised by the receiver.";
-        waiting=true;if(!commands.offer(cmd)){waiting=false;return "Command queue is busy.";}return null;
+        if(!commands.offer(cmd)){return "Command queue is busy.";}waiting=true;return null;
     }
-    private void finish(String message){expected=null;waiting=false;listener.feedback(false,message);}
+    private void finish(String message){expected=null;if(!message.startsWith("Confirmed"))commands.clear();waiting=!commands.isEmpty();listener.feedback(waiting,message);}
     private void write(OutputStream out,String cmd)throws IOException{out.write((cmd+"\r").getBytes(StandardCharsets.US_ASCII));listener.line("→ "+cmd);}
     private void accept(String line){
         lastReceivedAt=System.currentTimeMillis();
         Double v=Protocol.volume(line);if(v!=null){volume=v;volumeAt=System.currentTimeMillis();}
+        if(line.equals("PSTONE CTRL ON")||line.equals("PSTONE CTRL OFF"))tone=line.endsWith(" ON");
+        if(line.equals("PSLFC ON")||line.equals("PSLFC OFF"))lfc=line.endsWith(" ON");
+        if(line.matches("PSBAS [0-9]{2}"))bass=Integer.parseInt(line.substring(6))-50;
+        if(line.startsWith("SYSMI "))mode=line.substring(6).trim();else if(line.startsWith("MS"))mode=line.substring(2);
         listener.line(line);
         if(expected!=null&&Protocol.confirmed(expected,line))finish("Confirmed by receiver");
     }
@@ -46,12 +51,12 @@ public final class ReceiverConnection implements AutoCloseable {
             try(Socket s=new Socket()){
                 socket=s;s.connect(new InetSocketAddress(host,23),3000);s.setSoTimeout(250);s.setTcpNoDelay(true);
                 if(!running)break;
-                volume=null;volumeAt=0;lastReceivedAt=0;connected=true;listener.status(true,host);
+                volume=null;tone=null;lfc=null;bass=null;mode="";volumeAt=0;lastReceivedAt=0;connected=true;listener.status(true,host);
                 InputStream in=s.getInputStream();OutputStream out=s.getOutputStream();
                 try{inputs=http.inputs();}catch(Exception e){inputs=new ArrayList<>();listener.feedback(false,"Input discovery unavailable; check receiver Network Control.");}
                 long poll=0,last=System.currentTimeMillis();StringBuilder buffer=new StringBuilder();byte[] bytes=new byte[8192];
                 while(running){
-                    String cmd=commands.poll();
+                    String cmd=expected==null?commands.poll():null;
                     if(cmd!=null){
                         listener.feedback(true,"Waiting for receiver confirmation…");
                         try{
@@ -65,15 +70,27 @@ public final class ReceiverConnection implements AutoCloseable {
                                     if(volume==null||System.currentTimeMillis()-volumeAt>12000)throw new IOException("Waiting for a fresh volume reading");
                                     wire=Protocol.volumeRequest(cmd,volume,limit);
                                 }
+                                if(cmd.startsWith("PS")){
+                                    if(Arrays.asList("DIRECT","PUREDIRECT").contains(Protocol.modeKey(mode)))throw new IOException("Unavailable in Direct / Pure Direct");
+                                    if(cmd.startsWith("PSTONE")&&tone==null)throw new IOException("Waiting for tone status");
+                                    if(cmd.startsWith("PSLFC")&&lfc==null)throw new IOException("Waiting for LFC status");
+                                    if(cmd.startsWith("PSCNTAMT")&&!Boolean.TRUE.equals(lfc))throw new IOException("Enable Audyssey LFC first");
+                                    if(cmd.startsWith("PSBAS")){
+                                        if(!Boolean.TRUE.equals(tone)||bass==null)throw new IOException("Enable Tone Control first");
+                                        int target=bass+(cmd.endsWith("UP")?1:-1);if(target < -6||target > 6)throw new IOException("Bass limit reached");
+                                        wire=String.format(Locale.US,"PSBAS %02d",target+50);
+                                    }
+                                }
                                 write(out,wire);expected=wire;deadline=System.currentTimeMillis()+5000;
-                                write(out,wire.startsWith("MV")?"MV?":wire.startsWith("MU")?"MU?":wire.startsWith("PW")?"PW?":wire.startsWith("SI")?"SI?":"MS?");
+                                write(out,wire.startsWith("PSTONE")?"PSTONE CTRL ?":wire.startsWith("PSBAS")?"PSBAS ?":wire.startsWith("PSLFC")?"PSLFC ?":wire.startsWith("PSCNTAMT")?"PSCNTAMT ?":wire.startsWith("MV")?"MV?":wire.startsWith("MU")?"MU?":wire.startsWith("PW")?"PW?":wire.startsWith("SI")?"SI?":"MS?");
                             }
                         }catch(Exception e){finish(e.getMessage()+" · no automatic retry");}
                     }
                     long now=System.currentTimeMillis();
                     if(expected!=null&&now>deadline)finish("No matching receiver reply. Command was not retried.");
                     if(now-poll>8000){
-                        for(String q:new String[]{"PW?","MV?","MU?","SI?","MS?"})write(out,q);
+                        for(String q:new String[]{"PW?","MV?","MU?","SI?","MS?","PSTONE CTRL ?","PSBAS ?","PSLFC ?","PSCNTAMT ?"})write(out,q);
+                        try{inputs=http.inputs();}catch(Exception ignored){}
                         // The receiver's current genre list includes exact Dolby decoder/upmixer entries.
                         try{modes=http.modes().choices();}catch(Exception e){modes=new ArrayList<>(Arrays.asList(new ReceiverHttp.Choice("Stereo","MSSTEREO"),new ReceiverHttp.Choice("Direct","MSDIRECT"),new ReceiverHttp.Choice("Pure Direct","MSPURE DIRECT")));}
                         advertised.clear();for(ReceiverHttp.Choice c:inputs)advertised.put(c.command,c);for(ReceiverHttp.Choice c:modes)advertised.put(c.command,c);

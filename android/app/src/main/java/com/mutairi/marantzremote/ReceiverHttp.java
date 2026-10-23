@@ -85,7 +85,14 @@ public final class ReceiverHttp {
         for(int i=0;i<zones.getLength();i++){Element zone=(Element)zones.item(i);NodeList zn=zone.getElementsByTagName("Zone");if(zn.getLength()==0||!text((Element)zn.item(0),"No").equals("0"))continue;
             NodeList inputs=zone.getElementsByTagName("InputSource");if(inputs.getLength()==0)continue;NodeList sources=((Element)inputs.item(0)).getElementsByTagName("Source");
             for(int j=0;j<sources.getLength();j++){Element e=(Element)sources.item(j);String code=codes.get(text(e,"FuncName").toUpperCase(Locale.ROOT));if(code!=null)out.add(new Choice(text(e,"DefaultName"),"SI"+code));}
-        }return out;
+        }
+        try{
+            Document names=xml(transport.request("/goform/AppCommand.xml","<?xml version='1.0' encoding='utf-8'?>\n<tx><cmd id=\"1\">GetRenameSource</cmd></tx>"));
+            NodeList lists=names.getElementsByTagName("list");Map<String,String> renamed=new HashMap<>();
+            for(int i=0;i<lists.getLength();i++){Element e=(Element)lists.item(i);String code=codes.get(text(e,"name").toUpperCase(Locale.ROOT)),label=text(e,"rename");if(code!=null&&!label.isEmpty())renamed.put("SI"+code,label);}
+            for(int i=0;i<out.size();i++){Choice c=out.get(i);if(renamed.containsKey(c.command))out.set(i,new Choice(renamed.get(c.command),c.command));}
+        }catch(Exception ignored){ /* Factory labels remain usable when rename API is absent. */ }
+        return out;
     }
     static String token(String label){return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(label.getBytes(StandardCharsets.UTF_8));}
     static String display(String label){if(label.equalsIgnoreCase("Dolby Audio - Dolby Digital Plus"))return "Dolby Digital Plus · original";if(label.equalsIgnoreCase("Dolby Atmos/DSurr"))return "Dolby Atmos / Dolby Surround";return label;}

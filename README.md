@@ -21,12 +21,12 @@ All platforms offer power, volume, mute, receiver discovery, input selection, li
 | Feature | Browser / Windows | Android |
 | --- | --- | --- |
 | Volume slider and app limit | Yes | Yes |
-| Gold dial and volume presets | Yes | Not yet |
-| Custom receiver input names | Yes | Factory names |
+| Gold dial and volume presets | Yes | Yes (1.2) |
+| Custom receiver input names | Yes | Yes (1.2) |
 | Receiver-reported listening modes | Yes | Yes |
-| Tone Control and bass | Yes | Not yet |
-| Audyssey LFC and containment | Yes | Not yet |
-| Link to receiver Web Control | Yes | Not yet |
+| Tone Control and bass | Yes | Yes (1.2) |
+| Audyssey LFC and containment | Yes | Yes (1.2) |
+| Link to receiver Web Control | Yes | Yes (1.2) |
 
 Controls depend on receiver capabilities and listening mode. Direct and Pure Direct disable tone and LFC controls. The current implementation has been checked against a CINEMA 40; other models may provide fewer controls.
 

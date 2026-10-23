@@ -8,7 +8,7 @@ public final class Protocol {
     private static final Set<String> ACTIONS=new HashSet<>(Arrays.asList("MVUP","MVDOWN","MUON","MUOFF","PWON","PWSTANDBY",
         "SITV","SIBD","SIDVD","SIGAME","SIMPLAY","SICD","SIPHONO","SINET",
         "MSSTEREO","MSDIRECT","MSPURE DIRECT","MSDOLBY DIGITAL","MSDTS SURROUND","MSMCH STEREO"));
-    public static boolean allowed(String command) { return ACTIONS.contains(command)||command.matches("MV[0-9]{2,3}"); }
+    public static boolean allowed(String command) { return ACTIONS.contains(command)||command.matches("MV[0-9]{2,3}")||command.matches("PSTONE CTRL (ON|OFF)")||command.matches("PSLFC (ON|OFF)")||command.matches("PSCNTAMT 0[1-7]")||command.matches("PSBAS (UP|DOWN)"); }
     public static Double volume(String line) {
         if (!line.matches("MV[0-9]{2,3}")) return null;
         String n=line.substring(2);
@@ -27,6 +27,7 @@ public final class Protocol {
     public static String modeKey(String value){return value.toUpperCase(java.util.Locale.ROOT).replace("+","PLUS").replaceAll("[^A-Z0-9]","").replace("MULTICHSTEREO","MCHSTEREO").replace("DOLBYDIGITALPLUS","DDPLUS").replace("DSURR","DSUR");}
     public static boolean confirmed(String command,String line){
         if(command.startsWith("MV")){Double expected=volume(command),actual=volume(line);return expected!=null&&expected.equals(actual);}
+        if(command.startsWith("PS"))return command.equals(line);
         if(command.startsWith("MU")||command.startsWith("PW")||command.startsWith("SI"))return command.equals(line);
         if(command.startsWith("MS")){String actual=line.startsWith("SYSMI ")?line.substring(6):line.startsWith("MS")?line.substring(2):"";return modeKey(command.substring(2)).equals(modeKey(actual));}
         return false;
