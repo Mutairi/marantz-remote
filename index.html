@@ -57,20 +57,43 @@ function modeKey(value){return value.toUpperCase().replaceAll('+','PLUS').replac
 const $=id=>document.getElementById(id);let token='',state=null,busy=false,sending=false,localMessage=null,dragging=false,selecting=false,lastScan=false,wasOffline=false;
 function notice(message,type=''){localMessage={message,type};$('notice').textContent=message;$('notice').dataset.state=type;}
 async function request(path,body,timeout=5000){const r=await fetch(path,{method:'POST',signal:AbortSignal.timeout(timeout),headers:{'Content-Type':'application/json','X-Control-Token':token},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
-async function command(cmd){if(sending)return;sending=true;localMessage=null;notice('Sending command…','pending');render();try{await request('/api/command',{command:cmd},10000);localMessage=null;}catch(e){notice(e.message,'error');}finally{sending=false;await refresh();}}
+const adjustmentQueue=[];let drainingAdjustments=false;
+function isAdjustment(cmd){return /^(MV(?:UP|DOWN|\d{2,3})|PSBAS (?:UP|DOWN))$/.test(cmd);}
+async function command(cmd){
+ if(isAdjustment(cmd)){
+  if(adjustmentQueue.length>=40)return;
+  adjustmentQueue.push(cmd);drainAdjustments();return;
+ }
+ await sendCommand(cmd);
+}
+async function drainAdjustments(){
+ if(drainingAdjustments)return;drainingAdjustments=true;
+ let sent=false;
+ try{
+  while(adjustmentQueue.length){
+   await refresh();
+   if(!state?.connected||wasOffline){adjustmentQueue.length=0;break;}
+   if(sending||state.command?.status==='pending'){await new Promise(resolve=>setTimeout(resolve,150));continue;}
+   if(sent&&state.command?.status==='unconfirmed'){adjustmentQueue.length=0;notice('Receiver did not confirm the last change. Tap again to retry.','error');break;}
+   await sendCommand(adjustmentQueue.shift());sent=true;
+   if(localMessage?.type==='error'){adjustmentQueue.length=0;break;}
+  }
+ }finally{drainingAdjustments=false;}
+}
+async function sendCommand(cmd){if(sending)return;sending=true;localMessage=null;notice('Sending command…','pending');render();try{await request('/api/command',{command:cmd},10000);localMessage=null;}catch(e){notice(e.message,'error');}finally{sending=false;await refresh();}}
 document.querySelectorAll('[data-command]').forEach(button=>button.onclick=()=>command(button.dataset.command));
 function options(id,list,current,placeholder){const select=$(id);if(document.activeElement===select)return;const signature=JSON.stringify([list,current]);if(select.dataset.signature===signature)return;select.dataset.signature=signature;select.replaceChildren();if(!list.some(x=>x.value===current)){const o=new Option(current&&current!=='Unknown'?current:placeholder,'');o.disabled=true;o.selected=true;select.add(o);}for(const item of list)select.add(new Option(item.label,item.value,false,item.value===current));}
 function render(){if(!state)return;const s=state;const fresh=s.connected&&s.last_update&&Date.now()/1000-s.last_update<12;const pending=s.command?.status==='pending';const locked=!fresh||pending||sending;document.body.dataset.busy=String(!!fresh&&(pending||sending));
 $('receiverName').textContent=s.name;$('dot').classList.toggle('on',!!fresh);$('status').textContent=fresh?'Connected · '+s.power:s.connected?'Waiting for fresh status…':'Reconnecting…';$('status').title=s.error||'';
 $('host').textContent=s.host;$('webSettings').href='http://'+s.host+'/';$('webSettings').hidden=!s.host;$('volume').textContent=fresh&&s.volume!==null?s.volume.toFixed(1):'—';$('volume').classList.toggle('above',fresh&&s.volume>s.limit);$('format').textContent=fresh?s.format:'—';$('currentMode').textContent=fresh?(s.modes.find(x=>[x.label,x.value,...(x.aliases||[])].some(alias=>modeKey(alias)===modeKey(s.mode)))?.label||s.mode):'—';
 
-document.querySelectorAll('[data-command]').forEach(b=>b.disabled=locked);$('mute').disabled=locked||s.mute===null;$('mute').textContent=s.mute?'Unmute':'Mute';$('mute').dataset.command=s.mute?'MUOFF':'MUON';$('mute').classList.toggle('active',s.mute===true);$('on').classList.toggle('active',s.power==='On');$('standby').classList.toggle('active',s.power==='Standby');$('up').disabled=locked||s.volume===null||s.volume>=s.limit;$('down').disabled=locked||s.volume===null||s.volume<=-80;
-$('volumeSlider').disabled=locked||s.volume===null;document.querySelectorAll('[data-volume]').forEach(b=>{const v=Number(b.dataset.volume);b.disabled=locked||s.volume===null||v>s.limit;b.classList.toggle('active',fresh&&s.volume===v);b.setAttribute('aria-pressed',String(!!fresh&&s.volume===v));});$('volumeSlider').max=s.limit;if(!dragging)$('volumeSlider').value=Math.min(s.volume??-80,s.limit);if(!dragging)$('sliderLabel').textContent='APP LIMIT '+s.limit+' dB';
+document.querySelectorAll('[data-command]').forEach(b=>b.disabled=locked);$('mute').disabled=locked||s.mute===null;$('mute').textContent=s.mute?'Unmute':'Mute';$('mute').dataset.command=s.mute?'MUOFF':'MUON';$('mute').classList.toggle('active',s.mute===true);$('on').classList.toggle('active',s.power==='On');$('standby').classList.toggle('active',s.power==='Standby');$('up').disabled=!fresh||s.volume===null||s.volume>=s.limit;$('down').disabled=!fresh||s.volume===null||s.volume<=-80;
+$('volumeSlider').disabled=!fresh||s.volume===null;document.querySelectorAll('[data-volume]').forEach(b=>{const v=Number(b.dataset.volume);b.disabled=!fresh||s.volume===null||v>s.limit;b.classList.toggle('active',fresh&&s.volume===v);b.setAttribute('aria-pressed',String(!!fresh&&s.volume===v));});$('volumeSlider').max=s.limit;if(!dragging)$('volumeSlider').value=Math.min(s.volume??-80,s.limit);if(!dragging)$('sliderLabel').textContent='APP LIMIT '+s.limit+' dB';
 options('input',s.inputs,s.input,'Inputs unavailable');options('mode',s.modes,s.modes.find(x=>[x.label,x.value,...(x.aliases||[])].some(alias=>modeKey(alias)===modeKey(s.mode)))?.value||s.mode,'Waiting for mode list');$('input').disabled=locked||!s.inputs.length;$('mode').disabled=locked||!s.modes.length;
 const bypass=['PUREDIRECT','DIRECT'].includes(modeKey(s.mode));
 $('tone').disabled=locked||bypass||s.tone==null;$('tone').textContent=s.tone?'Enabled':'Enable';$('tone').dataset.command=s.tone?'PSTONE CTRL OFF':'PSTONE CTRL ON';$('tone').classList.toggle('active',s.tone===true);$('tone').setAttribute('aria-pressed',String(s.tone===true));
 $('bassValue').textContent=fresh&&s.bass!=null?(s.bass>0?'+':'')+s.bass+' dB':'—';
-$('bassDown').disabled=locked||bypass||!s.tone||s.bass==null||s.bass<=-6;$('bassUp').disabled=locked||bypass||!s.tone||s.bass==null||s.bass>=6;
+$('bassDown').disabled=!fresh||bypass||!s.tone||s.bass==null||s.bass<=-6;$('bassUp').disabled=!fresh||bypass||!s.tone||s.bass==null||s.bass>=6;
 $('toneHint').textContent=bypass?'Unavailable in '+(modeKey(s.mode)==='PUREDIRECT'?'Pure Direct':'Direct')+'.':s.tone==null?'Waiting for receiver tone status…':!s.tone?'Enable Tone Control to adjust bass.':'Bass · −6 to +6 dB · 1 dB steps';
 if(document.activeElement!==$('limit'))$('limit').value=s.limit;$('limit').disabled=pending||sending;
 if(localMessage){$('notice').textContent=localMessage.message;$('notice').dataset.state=localMessage.type;}else if(s.command){$('notice').textContent=s.command.message;$('notice').dataset.state=s.command.status;}else if(fresh&&s.volume>s.limit){$('notice').textContent='Current volume is above your app limit. Volume down remains available.';$('notice').dataset.state='unconfirmed';}else{$('notice').textContent=s.inputs.length?'Inputs read from your receiver. Listening modes follow the incoming audio.':'Reading receiver capabilities…';$('notice').dataset.state='';}
