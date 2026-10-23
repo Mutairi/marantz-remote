@@ -1,6 +1,6 @@
 # Microsoft Store MSIX
 
-Reserved name: **Marantz Remote by THROY**. Store ID: `9MX0GQ4F3W0B`.
+Store display name: **Marantz Remote**. The original identity retains `MarantzRemotebyTHROY`; this is internal package metadata. Store ID: `9MX0GQ4F3W0B`.
 
 The Windows Store MSIX workflow packages the tested Windows executable as version `1.2.1.0`, using the identity assigned by Partner Center. Package identity values are public metadata, not signing credentials. A THROY gold-ring icon is generated during packaging.
 

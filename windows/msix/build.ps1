@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string]$IdentityName,
     [Parameter(Mandatory=$true)][string]$Publisher,
     [Parameter(Mandatory=$true)][string]$PublisherDisplayName,
-    [string]$DisplayName = 'Marantz Remote by THROY',
+    [string]$DisplayName = 'Marantz Remote',
     [string]$Version = '1.2.1.0'
 )
 $ErrorActionPreference = 'Stop'
