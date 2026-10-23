@@ -1,0 +1,68 @@
+name: Publish Release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download tested Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: Marantz-Remote-Windows
+          run-id: 39949265092
+          github-token: ${{ github.token }}
+          path: packages/windows
+      - name: Download tested Android build
+        uses: actions/download-artifact@v4
+        with:
+          name: Marantz-Remote-Android
+          run-id: 39990427148
+          github-token: ${{ github.token }}
+          path: packages/android
+      - name: Package versioned downloads
+        run: |
+          mkdir -p release
+          git archive --format=zip --prefix=Marantz-Remote-Web-v1.2.0/ HEAD index.html logo.svg server.py start.sh README.md docs/browser.md docs/security.md > release/Marantz-Remote-Web-v1.2.0.zip
+          cd packages/windows
+          zip -r ../../release/Marantz-Remote-Windows-v1.2.0.zip .
+          cd ../..
+          cp packages/android/app-debug.apk release/Marantz-Remote-Android-v1.2.0.apk
+          cd release
+          sha256sum *.zip *.apk > SHA256SUMS.txt
+      - name: Publish GitHub release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const tag = 'v1.2.0';
+            const body = `Three downloads for the same local Marantz remote:
+            - **Web v1.2.0:** Python 3 source bundle. Extract and run sh start.sh (Windows: python server.py), then open http://127.0.0.1:8765/.
+            - **Windows v1.2.0:** Extract and run Marantz-Remote.exe. Windows 10/11 x64; Microsoft Edge WebView2 Runtime required.
+            - **Android v1.2.0:** Install the APK on Android 8+. The Android app displays version 1.2 internally.
+
+            Gold interface, volume presets, custom input names, Tone Control/bass, Audyssey LFC/containment, and More Settings. Android uses native controls.
+
+            Windows and Android packages come from successful tested builds. Web source is packaged from this release commit. Real-device GUI and receiver compatibility still need hardware testing. Windows is unsigned; Android is debug-signed and may require uninstalling an older test build with a different signing key. Keep your device and receiver on the same trusted network. No Linux package in this release.
+
+            SHA256SUMS.txt contains download checksums.`;
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner, repo: context.repo.repo,
+              tag_name: tag, target_commitish: context.sha,
+              name: 'Marantz Remote v1.2.0 · Web, Windows & Android',
+              body, draft: false, prerelease: false
+            });
+            for (const name of fs.readdirSync('release')) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner, repo: context.repo.repo,
+                release_id: release.data.id, name,
+                data: fs.readFileSync('release/' + name)
+              });
+            }
+            core.notice(release.data.html_url);
