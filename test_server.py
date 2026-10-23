@@ -23,6 +23,17 @@ class RemoteTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'limit'):r.execute('PSBAS UP',-10)
         r.receive('MSPURE DIRECT')
         with self.assertRaisesRegex(ValueError,'unavailable'):r.execute('PSTONE CTRL ON',-10)
+    def test_lfc_confirmation_and_guards(self):
+        r=self.receiver();r.receive('MSSTEREO');r.receive('PSLFC OFF');r.receive('PSCNTAMT 01')
+        with self.assertRaisesRegex(ValueError,'Enable'):r.execute('PSCNTAMT 02',-10)
+        r.execute('PSLFC ON',-10);r.receive('PSLFC ON')
+        self.assertEqual(r.state['command']['status'],'confirmed')
+        r.execute('PSCNTAMT 07',-10);r.receive('PSCNTAMT 07')
+        self.assertEqual(r.state['containment'],7)
+        self.assertEqual(r.state['command']['status'],'confirmed')
+        with self.assertRaises(ValueError):r.execute('PSCNTAMT 08',-10)
+        r.receive('MSPURE DIRECT')
+        with self.assertRaisesRegex(ValueError,'unavailable'):r.execute('PSLFC ON',-10)
     def test_volume_parser(self):
         r=self.receiver()
         for line,value in [('MV00',-80),('MV455',-34.5),('MV80',0),('MV985',18.5)]:
