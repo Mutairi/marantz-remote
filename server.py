@@ -28,6 +28,13 @@ def read_xml(url, data=None):
     root=ET.fromstring(data)
     for node in root.iter(): node.tag=node.tag.split('}')[-1]
     return root
+def renamed_inputs(host, port):
+    data=b'<?xml version="1.0" encoding="utf-8"?>\n<tx><cmd id="1">GetRenameSource</cmd></tx>'
+    root=read_xml(f'http://{host}:{port}/goform/AppCommand.xml',data)
+    return {INPUT_CODES[item.findtext('name','').upper()]:item.findtext('rename','').strip()
+            for item in root.findall('.//functionrename/list')
+            if item.findtext('name','').upper() in INPUT_CODES and item.findtext('rename','').strip()}
+
 def capabilities(host):
     if not private_ip(host): return None
     for port in (8080,80):
@@ -40,6 +47,10 @@ def capabilities(host):
                 for source in zone.findall('InputSource/List/Source'):
                     code=INPUT_CODES.get(source.findtext('FuncName','').upper())
                     if code: inputs.append({'value':code,'label':source.findtext('DefaultName') or code})
+            try:
+                names=renamed_inputs(host,port)
+                for item in inputs: item['label']=names.get(item['value'],item['label'])
+            except (OSError,ValueError,ET.ParseError): pass
             return {'host':host,'name':root.findtext('ModelName') or 'Marantz','inputs':inputs,'control_port':port}
         except (OSError,ValueError,ET.ParseError): pass
     return None
@@ -183,6 +194,12 @@ class Receiver:
             with self.lock:
                 self.control_port=info['control_port']
                 self.state.update(name=info['name'],inputs=info['inputs'])
+        while not self.stop.wait(30):
+            try:
+                names=renamed_inputs(self.host,self.control_port)
+                with self.lock:
+                    self.state['inputs']=[dict(item,label=names.get(item['value'],item['label'])) for item in self.state['inputs']]
+            except (OSError,ValueError,ET.ParseError): pass
     def run(self):
         threading.Thread(target=self.load_capabilities,daemon=True).start()
         while not self.stop.is_set():

@@ -5,6 +5,11 @@ import server
 class RemoteTests(unittest.TestCase):
     def receiver(self):
         r=server.Receiver();r.state['connected']=True;r.receive('MV60');r.sock=Mock();r.select_indexed_mode=Mock();return r
+    def test_custom_input_names_keep_control_codes(self):
+        import xml.etree.ElementTree as ET
+        xml=ET.fromstring('<rx><cmd><functionrename><list><name>Blu-ray</name><rename>DIABLO   </rename></list><list><name>GAME1</name><rename>PS5</rename></list><list><name>CD</name><rename>   </rename></list></functionrename></cmd></rx>')
+        with patch.object(server,'read_xml',return_value=xml):
+            self.assertEqual(server.renamed_inputs('10.10.10.40',8080),{'BD':'DIABLO','GAME':'PS5'})
     def test_volume_parser(self):
         r=self.receiver()
         for line,value in [('MV00',-80),('MV455',-34.5),('MV80',0),('MV985',18.5)]:
