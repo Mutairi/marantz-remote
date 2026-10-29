@@ -28,9 +28,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Marantz-Remote-Windows-Release
-          path: |
-            dist/Marantz-Remote.exe
-            windows/README.md
+          path: dist/Marantz-Remote.exe
           if-no-files-found: error
   release:
     needs: windows
@@ -54,7 +52,8 @@ jobs:
           mkdir -p release
           git archive --format=zip --prefix=Marantz-Remote-Web-v1.2.1/ HEAD index.html logo.svg server.py start.sh README.md docs/browser.md docs/security.md > release/Marantz-Remote-Web-v1.2.1.zip
           cd packages/windows
-          zip -r ../../release/Marantz-Remote-Windows-v1.2.1.zip .
+          zip -j ../../release/Marantz-Remote-Windows-v1.2.1.zip Marantz-Remote.exe
+          test "$(unzip -Z1 ../../release/Marantz-Remote-Windows-v1.2.1.zip)" = 'Marantz-Remote.exe'
           cd ../..
           cp packages/android/app-debug.apk release/Marantz-Remote-Android-v1.2.1.apk
           cd release
@@ -75,13 +74,22 @@ jobs:
             Windows and Android packages come from successful tested builds. Web source is packaged from this release commit. Real-device GUI and receiver compatibility still need hardware testing. Windows is unsigned; Android is debug-signed and may require uninstalling an older test build with a different signing key. Keep your device and receiver on the same trusted network. No Linux package in this release.
 
             SHA256SUMS.txt contains download checksums.`;
-            const release = await github.rest.repos.createRelease({
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner, repo: context.repo.repo, tag
+            }).catch(error => { if (error.status !== 404) throw error; return github.rest.repos.createRelease({
               owner: context.repo.owner, repo: context.repo.repo,
               tag_name: tag, target_commitish: context.sha,
               name: 'Marantz Remote v1.2.1 · Web, Windows & Android',
               body, draft: false, prerelease: false
+            }); });
+            const existing = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner, repo: context.repo.repo, release_id: release.data.id
             });
             for (const name of fs.readdirSync('release')) {
+              const previous = existing.data.find(asset => asset.name === name);
+              if (previous) await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner, repo: context.repo.repo, asset_id: previous.id
+              });
               await github.rest.repos.uploadReleaseAsset({
                 owner: context.repo.owner, repo: context.repo.repo,
                 release_id: release.data.id, name,
