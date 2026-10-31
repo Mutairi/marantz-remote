@@ -286,3 +286,15 @@ class IlluminationPowerTests(unittest.TestCase):
         r=server.Receiver();r.state.update(connected=True,power='On',illumination='2',illumination_updated_at=time.time());r.last_received=time.monotonic()
         r.receive('PWSTANDBY');r.receive('PWON')
         self.assertIsNone(r.snapshot()['illumination'])
+
+class FrontDisplayTests(unittest.TestCase):
+    def test_write_updates_circle_and_illumination(self):
+        with patch.object(server,'receiver_http',return_value=b'') as http:
+            server.write_illumination('10.10.10.40',11080,'5')
+            data=''.join(server.urllib.parse.parse_qs(server.urllib.parse.urlsplit(c.args[0]).query)['data'][0] for c in http.call_args_list)
+            self.assertIn('<DisplaysBrightness>4</DisplaysBrightness>',data)
+            self.assertIn('<IlluminationBrightness>5</IlluminationBrightness>',data)
+    def test_partial_readback_is_not_confirmed(self):
+        root=server.ET.fromstring('<FrontPanel><DisplaysBrightness>1</DisplaysBrightness><IlluminationBrightness>5</IlluminationBrightness></FrontPanel>')
+        with patch.object(server,'read_xml',return_value=root):
+            self.assertNotEqual(server.read_illumination('10.10.10.40',11080),'5')

@@ -14,7 +14,10 @@ const input={updated_at:Date.now()/1000,layout:'7.1',channels:[{slot:'b2',label:
 state.channels={input,output:{...input,layout:'5.1'}};render();
 check($('illumination').value==='3','receiver reported illumination selected');
 check(!$('illumination').disabled,'fresh illumination enabled');
-check([...$('illumination').options].some(o=>o.text.includes('Dark')),'official Dark option');
+check([...$('illumination').options].map(o=>o.text).join(',')==='Off,Dark,Dim,Bright','exact front display choices');
+check(!$('frontPanelLights'),'no separate lighting menu');
+check(Boolean($('illumination').compareDocumentPosition($('soundAdjustments'))&Node.DOCUMENT_POSITION_FOLLOWING),'front display above sound adjustments');
+state.illumination='1';render();check($('illumination').selectedOptions[0].text==='Choose…','mixed settings prompt');check(!$('illumination').disabled,'mixed settings allow selection');state.illumination='3';
 state.illumination_updated_at-=20;render();check($('illumination').disabled,'stale illumination disabled');
 state.illumination_updated_at=Date.now()/1000;render();
 check($('inputLayout').textContent==='7.1','input caption');

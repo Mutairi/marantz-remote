@@ -38,13 +38,13 @@ public class ReceiverHttpTest {
     }
     @Test public void illuminationUsesOfficialSeparateSettingAndConfirms()throws Exception{
         List<String> requests=new ArrayList<>();int[] current={1};
-        ReceiverHttp h=new ReceiverHttp((path,body)->{requests.add(path);assertNull(body);if(path.contains("set_config")){assertTrue(path.contains("IlluminationBrightness"));assertFalse(path.contains("DisplaysBrightness"));current[0]=5;return "";}return "<FrontPanel><IlluminationBrightness>"+current[0]+"</IlluminationBrightness></FrontPanel>";});
+        ReceiverHttp h=new ReceiverHttp((path,body)->{requests.add(path);assertNull(body);if(path.contains("set_config")){assertTrue(path.contains("IlluminationBrightness")||path.contains("DisplaysBrightness"));current[0]=5;return "";}return "<FrontPanel><DisplaysBrightness>"+(current[0]==1?1:current[0]-1)+"</DisplaysBrightness><IlluminationBrightness>"+current[0]+"</IlluminationBrightness></FrontPanel>";});
         assertEquals("1",h.illumination());assertEquals("5",h.setIllumination("5"));
         assertTrue(requests.stream().allMatch(v->v.contains("type=18")));
         try{h.setIllumination("6");fail("Invalid brightness accepted");}catch(IllegalArgumentException expected){}
     }
     @Test public void wrongIlluminationReadbackDoesNotConfirm()throws Exception{
-        ReceiverHttp h=new ReceiverHttp((path,body)->path.contains("set_config")?"":"<FrontPanel><IlluminationBrightness>1</IlluminationBrightness></FrontPanel>");
+        ReceiverHttp h=new ReceiverHttp((path,body)->path.contains("set_config")?"":"<FrontPanel><DisplaysBrightness>1</DisplaysBrightness><IlluminationBrightness>1</IlluminationBrightness></FrontPanel>");
         try{h.setIllumination("5");fail("Wrong readback accepted");}catch(java.io.IOException expected){assertTrue(expected.getMessage().contains("not confirm"));}
     }
     @Test public void missingIlluminationIsNotAssumedOff()throws Exception{

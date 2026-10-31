@@ -8,7 +8,7 @@ public final class Protocol {
     private static final Set<String> ACTIONS=new HashSet<>(Arrays.asList("MVUP","MVDOWN","MUON","MUOFF","PWON","PWSTANDBY",
         "SITV","SIBD","SIDVD","SIGAME","SIMPLAY","SICD","SIPHONO","SINET",
         "MSSTEREO","MSDIRECT","MSPURE DIRECT","MSDOLBY DIGITAL","MSDTS SURROUND","MSMCH STEREO"));
-    public static boolean allowed(String command) { return ACTIONS.contains(command)||command.matches("IL[1-5]")||command.matches("MV[0-9]{2,3}")||command.matches("PSTONE CTRL (ON|OFF)")||command.matches("PSLFC (ON|OFF)")||command.matches("PSCNTAMT 0[1-7]")||command.matches("PSBAS (UP|DOWN)"); }
+    public static boolean allowed(String command) { return ACTIONS.contains(command)||command.matches("IL[2-5]")||command.matches("MV[0-9]{2,3}")||command.matches("PSTONE CTRL (ON|OFF)")||command.matches("PSLFC (ON|OFF)")||command.matches("PSCNTAMT 0[1-7]")||command.matches("PSBAS (UP|DOWN)"); }
     public static Double volume(String line) {
         if (!line.matches("MV[0-9]{2,3}")) return null;
         String n=line.substring(2);

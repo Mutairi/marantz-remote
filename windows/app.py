@@ -30,7 +30,7 @@ def main():
                 page = response.read()
                 assert b'MORE SETTINGS' in page
                 assert b'illumination' in page
-                assert b'inputSpeakers' in page and b'outputSpeakers' in page and b'v1.4' in page
+                assert b'inputSpeakers' in page and b'outputSpeakers' in page and b'v1.4.1' in page
             return
         import webview
         threading.Thread(target=server.app.receiver.run, daemon=True).start()

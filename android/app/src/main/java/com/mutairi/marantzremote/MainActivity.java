@@ -39,7 +39,7 @@ public class MainActivity extends Activity {
         scroll.setOnApplyWindowInsetsListener((v,insets)->{body.setPadding(dp(25),dp(28)+insets.getSystemWindowInsetTop(),dp(25),dp(24)+insets.getSystemWindowInsetBottom());return insets;});
         ImageView logo=new ImageView(this);logo.setImageResource(com.mutairi.marantzremote.R.drawable.marantz_logo);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(200),dp(36));lp.gravity=Gravity.CENTER_HORIZONTAL;body.addView(logo,lp);
-        title=text("PERSONAL REMOTE · v1.4",11,MUTED);title.setLetterSpacing(.2f);title.setGravity(Gravity.CENTER);gap(15);
+        title=text("PERSONAL REMOTE · v1.4.1",11,MUTED);title.setLetterSpacing(.2f);title.setGravity(Gravity.CENTER);gap(15);
         status=text("Choose a receiver on your Wi-Fi",13,MUTED);status.setVisibility(View.GONE);
         volume=text("—",62,GOLD);volume.setTypeface(Typeface.create("sans-serif-thin",Typeface.NORMAL));volume.setGravity(Gravity.CENTER);
         body.removeView(volume);LinearLayout dial=new LinearLayout(this);dial.setOrientation(LinearLayout.VERTICAL);dial.setGravity(Gravity.CENTER);
@@ -55,6 +55,9 @@ public class MainActivity extends Activity {
         row=row();inputButton=addControl(row,"Choose input",()->chooseAvailable("Input",inputs));
         section("LISTENING MODE");mode=text("—",14,GOLD);mode.setVisibility(View.GONE);
         row=row();modeButton=addControl(row,"Choose mode",()->chooseAvailable("Listening mode",modes));
+        gap(16);illuminationButton=button("Front display · Unavailable",()->{
+            choose("Front display",new String[]{"Off","Dark","Dim","Bright"},new String[]{"IL5","IL4","IL3","IL2"});
+        });body.addView(illuminationButton);controls.add(illuminationButton);
         gap(16);Button soundToggle=button("Sound adjustments ▾",()->soundPanel.setVisibility(soundPanel.getVisibility()==View.GONE?View.VISIBLE:View.GONE));body.addView(soundToggle);
         soundPanel=new LinearLayout(this);soundPanel.setOrientation(LinearLayout.VERTICAL);body.addView(soundPanel);soundPanel.setVisibility(View.GONE);
         LinearLayout soundRow=new LinearLayout(this);soundRow.setGravity(Gravity.CENTER_VERTICAL);soundPanel.addView(soundRow);rowLabel(soundRow,"Tone Control");
@@ -66,11 +69,6 @@ public class MainActivity extends Activity {
         lfcButton=inline(soundRow,"—",()->send(Boolean.TRUE.equals(lfc)?"PSLFC OFF":"PSLFC ON"));lfcButton.setContentDescription("Toggle Audyssey LFC");
         containmentButton=inline(soundRow,"Level —",()->choose("Containment amount",new String[]{"1","2","3","4","5","6","7"},new String[]{"PSCNTAMT 01","PSCNTAMT 02","PSCNTAMT 03","PSCNTAMT 04","PSCNTAMT 05","PSCNTAMT 06","PSCNTAMT 07"}));containmentButton.setMinWidth(dp(90));
         soundHint=new TextView(this);soundHint.setTextSize(10);soundHint.setTextColor(MUTED);soundPanel.addView(soundHint);
-        gap(16);Button lightsToggle=button("Front-panel lights ▾",()->{illuminationButton.setVisibility(illuminationButton.getVisibility()==View.GONE?View.VISIBLE:View.GONE);});body.addView(lightsToggle);
-        illuminationButton=button("LED illumination · Unavailable",()->{
-            String[] labels={"Auto · follow display","Bright · 100%","Dim · 50%","Dark · 25%","Off"};
-            choose("LED illumination",labels,new String[]{"IL1","IL2","IL3","IL4","IL5"});
-        });body.addView(illuminationButton);controls.add(illuminationButton);illuminationButton.setVisibility(View.GONE);
         gap(20);text("INCOMING AUDIO",10,MUTED);format=text("—",14,GOLD);gap(16);
         LinearLayout speakers=row();
         inputSpeakers=new SpeakerView(this,"INPUT");outputSpeakers=new SpeakerView(this,"OUTPUT");
@@ -104,8 +102,8 @@ public class MainActivity extends Activity {
         for(Button b:controls){b.setEnabled(repeatControls.contains(b)?fresh:ready);b.setAlpha(fresh?1f:.4f);}
         if(illuminationButton!=null){
             boolean lightFresh=fresh&&illuminationValue!=null&&System.nanoTime()/1000000-illuminationAt<12000;
-            String[] lightLabels={"Auto · follow display","Bright · 100%","Dim · 50%","Dark · 25%","Off"};
-            illuminationButton.setText("LED illumination · "+(lightFresh?lightLabels[Integer.parseInt(illuminationValue)-1]:"Unavailable"));illuminationButton.setEnabled(ready&&lightFresh);
+            String[] lightLabels={"Choose…","Bright","Dim","Dark","Off"};
+            illuminationButton.setText("Front display · "+(lightFresh?lightLabels[Integer.parseInt(illuminationValue)-1]:"Unavailable"));illuminationButton.setEnabled(ready&&lightFresh);
         }
         if(mute!=null)mute.setEnabled(ready&&muted!=null);if(inputButton!=null)inputButton.setEnabled(ready&&!inputs.isEmpty());if(modeButton!=null)modeButton.setEnabled(ready&&!modes.isEmpty());if(slider!=null)slider.setEnabled(fresh&&currentVolume!=null);
         if(up!=null)up.setEnabled(fresh&&currentVolume!=null&&currentVolume<volumeLimit);if(down!=null)down.setEnabled(fresh&&currentVolume!=null&&currentVolume > -80);
@@ -124,7 +122,7 @@ public class MainActivity extends Activity {
         discovery.execute(()->{try{List<Discovery.Device> found=Discovery.search(this);runOnUiThread(()->{if(isFinishing()||isDestroyed())return;if(!foreground)return;if(found.isEmpty())new AlertDialog.Builder(this).setTitle("No Marantz found").setMessage("Use the same Wi-Fi as the receiver, enable Network Control, and avoid guest Wi-Fi. You can also enter its IP manually. Some models do not support this discovery or control protocol.").setPositiveButton("OK",null).show();else{String[] labels=new String[found.size()];for(int i=0;i<found.size();i++)labels[i]=found.get(i).toString();new AlertDialog.Builder(this).setTitle("Choose Marantz").setItems(labels,(d,i)->{Discovery.Device device=found.get(i);connect(device.ip,device.name);}).setNegativeButton("Cancel",null).show();}});}catch(Exception e){runOnUiThread(()->notice.setText("Discovery failed: "+e.getMessage()+". Try entering the IP."));}finally{runOnUiThread(()->{scanning=false;scan.setEnabled(true);scan.setText("Find Marantz receivers");});}});
     }
     private void connect(String ip,String name){
-        generation++;int current=generation;if(connection!=null)connection.close();host=ip;receiverName=name;connected=false;commandPending=false;lastReply=0;inputs=new ArrayList<>();modes=new ArrayList<>();reset();title.setText("PERSONAL REMOTE · v1.4");status.setText("Connecting · "+ip);enabled(false);
+        generation++;int current=generation;if(connection!=null)connection.close();host=ip;receiverName=name;connected=false;commandPending=false;lastReply=0;inputs=new ArrayList<>();modes=new ArrayList<>();reset();title.setText("PERSONAL REMOTE · v1.4.1");status.setText("Connecting · "+ip);enabled(false);
         getPreferences(0).edit().putString("host",ip).putString("name",name).apply();
         connection=new ReceiverConnection(ip,new ReceiverConnection.Listener(){
             public void status(boolean ok,String detail){runOnUiThread(()->{if(current!=generation||!foreground)return;connected=ok;reset();enabled(ok);status.setText((ok?"Connected · ":"")+detail);});}

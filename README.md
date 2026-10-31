@@ -14,11 +14,11 @@ A minimal, unofficial Marantz remote. Warm charcoal, gold controls, and a direct
 
 In GitHub Actions, open a successful run and download its platform artifact. Sign in to GitHub to access this private repository's downloads. Artifacts expire after 30 days; download a newer build or rebuild when needed.
 
-## New in v1.4
+## New in v1.4.1 — Front display
 
-**Front-panel lights → LED illumination:** Auto (follow display), Bright (100%), Dim (50%), Dark (25%), and Off, using [Marantz's official CINEMA 40 settings](https://manuals.marantz.com/CINEMA40/NA/EN/DRDZSYsqiciyje.php). Changes affect the receiver's decorative illumination and leave front display brightness unchanged. The app confirms changes by reading back the receiver setting. This requires the newer receiver Web Control API; unsupported or stale status shows Unavailable. Supported on Windows, web, and Android.
+**Front display**, immediately above Sound adjustments, offers Off, Dark, Dim, and Bright. Each selection updates both the circular display and decorative illumination. Both settings must agree before a change is confirmed. External Auto or differing settings show no selected level until you choose one.
 
-**[Download v1.4](https://github.com/Mutairi/marantz-remote/releases/tag/v1.4)** — for Windows, extract the ZIP and run Marantz-Remote.exe. Close the previous version first.
+**[Download v1.4.1](https://github.com/Mutairi/marantz-remote/releases/tag/v1.4.1)**
 
 ## Speaker diagrams (v1.3)
 
@@ -30,7 +30,7 @@ All platforms offer power, volume, mute, receiver discovery, input selection, li
 
 | Feature | Browser / Windows | Android |
 | --- | --- | --- |
-| LED illumination | Yes (1.4) | Yes (1.4) |
+| Front display and illumination | Yes (1.4) | Yes (1.4) |
 | Live input/output channel diagrams | Yes (1.3) | Yes (1.3) |
 | Volume slider and app limit | Yes | Yes |
 | Gold dial and volume presets | Yes | Yes (1.2) |

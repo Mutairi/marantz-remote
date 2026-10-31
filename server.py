@@ -38,11 +38,15 @@ def read_illumination(host,port):
     root=read_xml(f'http://{host}:{port}/ajax/general/get_config?type=18')
     value=root.findtext('IlluminationBrightness','').strip()
     if root.tag!='FrontPanel' or value not in ILLUMINATION: raise ValueError('LED illumination unavailable')
-    return value
+    display=root.findtext('DisplaysBrightness','').strip()
+    if display not in ('1','2','3','4'): raise ValueError('Front display unavailable')
+    return value if value!='1' and int(display)==int(value)-1 else '1'
 def write_illumination(host,port,value):
-    if value not in ILLUMINATION or port not in (11080,80): raise ValueError('Invalid LED illumination')
-    query=urllib.parse.urlencode({'type':'18','data':f'<IlluminationBrightness>{value}</IlluminationBrightness>'})
-    receiver_http(f'http://{host}:{port}/ajax/general/set_config?{query}')
+    if value not in ('2','3','4','5') or port not in (11080,80): raise ValueError('Invalid LED illumination')
+    for tag,level in (('DisplaysBrightness',str(int(value)-1)),('IlluminationBrightness',value)):
+        query=urllib.parse.urlencode({'type':'18','data':f'<{tag}>{level}</{tag}>'})
+        receiver_http(f'http://{host}:{port}/ajax/general/set_config?{query}')
+
 
 def renamed_inputs(host, port):
     data=b'<?xml version="1.0" encoding="utf-8"?>\n<tx><cmd id="1">GetRenameSource</cmd></tx>'
@@ -271,7 +275,7 @@ class Receiver:
                     expected=self.state['bass']+(1 if cmd.endswith('UP') else -1)
                     if not -6<=expected<=6: raise ValueError('Bass limit reached')
                     cmd=f'PSBAS {expected+50:02d}';field='bass'
-            elif re.fullmatch(r'IL[1-5]',cmd):
+            elif re.fullmatch(r'IL[2-5]',cmd):
                 if self.snapshot()['illumination'] is None: raise ValueError('Waiting for fresh LED illumination status')
                 field='illumination';expected=cmd[2:]
             elif cmd in ('MUON','MUOFF'): field='mute';expected=cmd=='MUON'
@@ -288,6 +292,10 @@ class Receiver:
                     self.illumination_epoch+=1
                     write_illumination(self.host,self.illumination_port,expected)
                     actual=read_illumination(self.host,self.illumination_port)
+                    for attempt in range(5):
+                        if actual==expected: break
+                        time.sleep(.15)
+                        actual=read_illumination(self.host,self.illumination_port)
                     self.state.update(illumination=actual,illumination_updated_at=time.time())
                     p.update(status='confirmed' if actual==expected else 'unconfirmed',message='Confirmed by receiver' if actual==expected else 'Receiver did not confirm the LED setting. No automatic retry was made.')
                     return p['id']

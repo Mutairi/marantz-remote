@@ -68,7 +68,9 @@ public final class ReceiverHttp {
         Document d=xml(t.request("/ajax/general/get_config?type=18",null));Element root=d.getDocumentElement();
         String value=text(root,"IlluminationBrightness");
         if(!root.getTagName().equals("FrontPanel")||!value.matches("[1-5]"))throw new IOException("LED illumination unavailable");
-        return value;
+        String display=text(root,"DisplaysBrightness");
+        if(!display.matches("[1-4]"))throw new IOException("Front display unavailable");
+        return !value.equals("1")&&Integer.parseInt(display)==Integer.parseInt(value)-1?value:"1";
     }
     public String illumination()throws Exception{
         if(lightingTransport!=null)try{return readIllumination(lightingTransport);}catch(Exception ignored){}
@@ -76,10 +78,14 @@ public final class ReceiverHttp {
         throw new IOException("LED illumination unavailable");
     }
     public String setIllumination(String value)throws Exception{
-        if(value==null||!value.matches("[1-5]"))throw new IllegalArgumentException("Invalid LED illumination");
+        if(value==null||!value.matches("[2-5]"))throw new IllegalArgumentException("Invalid LED illumination");
         String before=illumination();Transport target=lightingTransport;
-        if(!before.equals(value))target.request("/ajax/general/set_config?type=18&data="+URLEncoder.encode("<IlluminationBrightness>"+value+"</IlluminationBrightness>","UTF-8"),null);
+        if(!before.equals(value)){
+            target.request("/ajax/general/set_config?type=18&data="+URLEncoder.encode("<DisplaysBrightness>"+(Integer.parseInt(value)-1)+"</DisplaysBrightness>","UTF-8"),null);
+            target.request("/ajax/general/set_config?type=18&data="+URLEncoder.encode("<IlluminationBrightness>"+value+"</IlluminationBrightness>","UTF-8"),null);
+        }
         String after=readIllumination(target);
+        for(int attempt=0;attempt<5&&!after.equals(value);attempt++){Thread.sleep(150);after=readIllumination(target);}
         if(!after.equals(value))throw new IOException("Receiver did not confirm LED illumination. No automatic retry made.");
         return after;
     }

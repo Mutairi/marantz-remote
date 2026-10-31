@@ -40,7 +40,7 @@ public final class ReceiverConnection implements AutoCloseable {
     public synchronized String submit(String cmd){
         if(!running||!connected)return "Receiver is disconnected. Retrying automatically.";
         if(System.currentTimeMillis()-lastReceivedAt>12000)return "Waiting for fresh receiver status.";
-        if(cmd.matches("IL[1-5]")&&(illumination==null||System.nanoTime()/1000000-illuminationAt>12000))return "Waiting for fresh LED illumination status.";
+        if(cmd.matches("IL[2-5]")&&(illumination==null||System.nanoTime()/1000000-illuminationAt>12000))return "Waiting for fresh LED illumination status.";
         if(waiting&&!cmd.matches("MV(UP|DOWN|[0-9]{2,3})|PSBAS (UP|DOWN)"))return "Wait for the current command to finish.";
         if((cmd.startsWith("SI")||cmd.startsWith("MODE:"))?!advertised.containsKey(cmd):!Protocol.allowed(cmd))return "This control is not advertised by the receiver.";
         if(!commands.offer(cmd)){return "Command queue is busy.";}waiting=true;return null;
@@ -77,7 +77,7 @@ public final class ReceiverConnection implements AutoCloseable {
                     if(cmd!=null){
                         listener.feedback(true,"Waiting for receiver confirmation…");
                         try{
-                            if(cmd.matches("IL[1-5]")){
+                            if(cmd.matches("IL[2-5]")){
                                 channelMonitor.invalidate();
                                 try{
                                     String selected=http.setIllumination(cmd.substring(2));
