@@ -27,7 +27,9 @@ def main():
             with urllib.request.urlopen('http://127.0.0.1:8765/api/status', timeout=5) as response:
                 assert 'token' in json.load(response)
             with urllib.request.urlopen('http://127.0.0.1:8765/', timeout=5) as response:
-                assert b'MORE SETTINGS' in response.read()
+                page = response.read()
+                assert b'MORE SETTINGS' in page
+                assert b'inputSpeakers' in page and b'outputSpeakers' in page and b'v1.3' in page
             return
         import webview
         threading.Thread(target=server.app.receiver.run, daemon=True).start()

@@ -12,7 +12,9 @@ public final class ReceiverConnection implements AutoCloseable {
         void line(String line);
         default void capabilities(List<ReceiverHttp.Choice> inputs,List<ReceiverHttp.Choice> modes){}
         default void feedback(boolean pending,String message){}
+        default void channels(SpeakerChannels.Panel input,SpeakerChannels.Panel output){}
     }
+    private final ChannelMonitor channelMonitor;private String routePower="",routeInput="",routeFormat="";
     private final String host;private final Listener listener;private final ReceiverHttp http;
     private final LinkedBlockingQueue<String> commands=new LinkedBlockingQueue<>(40);
     private volatile boolean running=true,connected=false,waiting=false;private volatile Socket socket;
@@ -23,6 +25,7 @@ public final class ReceiverConnection implements AutoCloseable {
     public ReceiverConnection(String host,Listener listener){
         if(!Protocol.localAddress(host))throw new IllegalArgumentException("Private IPv4 required");
         this.host=host;this.listener=listener;http=new ReceiverHttp(host);
+        channelMonitor=new ChannelMonitor(http::channels,listener::channels);channelMonitor.start();
         Thread worker=new Thread(this::run,"receiver");worker.setDaemon(true);worker.start();
     }
     public void setLimit(double value){if(Double.isNaN(value)||value < -60||value > 0)throw new IllegalArgumentException("Invalid volume limit");limit=value;}
@@ -42,6 +45,10 @@ public final class ReceiverConnection implements AutoCloseable {
         if(line.equals("PSLFC ON")||line.equals("PSLFC OFF"))lfc=line.endsWith(" ON");
         if(line.matches("PSBAS [0-9]{2}"))bass=Integer.parseInt(line.substring(6))-50;
         if(line.startsWith("SYSMI "))mode=line.substring(6).trim();else if(line.startsWith("MS"))mode=line.substring(2);
+        if(line.equals("PWON")||line.equals("PWSTANDBY"))routePower=line;
+        if(line.startsWith("SI"))routeInput=line.substring(2);
+        if(line.startsWith("SYSDA "))routeFormat=line.substring(6).trim();
+        channelMonitor.route(routePower+"|"+routeInput+"|"+Protocol.modeKey(mode)+"|"+routeFormat,connected&&routePower.equals("PWON"));
         listener.line(line);
         if(expected!=null&&Protocol.confirmed(expected,line))finish("Confirmed by receiver");
     }
@@ -51,6 +58,7 @@ public final class ReceiverConnection implements AutoCloseable {
             try(Socket s=new Socket()){
                 socket=s;s.connect(new InetSocketAddress(host,23),3000);s.setSoTimeout(250);s.setTcpNoDelay(true);
                 if(!running)break;
+                channelMonitor.route("Connecting",false);routePower="";routeInput="";routeFormat="";
                 volume=null;tone=null;lfc=null;bass=null;mode="";volumeAt=0;lastReceivedAt=0;connected=true;listener.status(true,host);
                 InputStream in=s.getInputStream();OutputStream out=s.getOutputStream();
                 try{inputs=http.inputs();}catch(Exception e){inputs=new ArrayList<>();listener.feedback(false,"Input discovery unavailable; check receiver Network Control.");}
@@ -106,9 +114,9 @@ public final class ReceiverConnection implements AutoCloseable {
                     }
                 }
             }catch(IOException e){if(running)listener.status(false,"Retrying · "+e.getMessage());}
-            finally{connected=false;socket=null;commands.clear();advertised.clear();if(waiting)finish("Disconnected before confirmation. Command was not replayed.");}
+            finally{connected=false;channelMonitor.route("Disconnected",false);socket=null;commands.clear();advertised.clear();if(waiting)finish("Disconnected before confirmation. Command was not replayed.");}
             if(running)try{Thread.sleep(2500);}catch(InterruptedException e){return;}
         }
     }
-    public void close(){running=false;connected=false;commands.clear();Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
+    public void close(){running=false;channelMonitor.close();connected=false;commands.clear();Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
 }

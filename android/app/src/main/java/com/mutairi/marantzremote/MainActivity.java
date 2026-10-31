@@ -17,6 +17,7 @@ public class MainActivity extends Activity {
     private final ExecutorService discovery=Executors.newSingleThreadExecutor();
     private final ArrayList<Button> controls=new ArrayList<>();
     private final ArrayDeque<String> activity=new ArrayDeque<>();
+    private SpeakerView inputSpeakers,outputSpeakers;private SpeakerChannels.Panel inputChannels,outputChannels;
     private LinearLayout body;private TextView status,volume,source,mode,format,notice,log,title;
     private Button mute,scan,inputButton,modeButton;private ReceiverConnection connection;
     private SeekBar slider;private boolean tracking=false,commandPending=false;private Double currentVolume=null;private double volumeLimit=-10;
@@ -37,7 +38,7 @@ public class MainActivity extends Activity {
         scroll.setOnApplyWindowInsetsListener((v,insets)->{body.setPadding(dp(25),dp(28)+insets.getSystemWindowInsetTop(),dp(25),dp(24)+insets.getSystemWindowInsetBottom());return insets;});
         ImageView logo=new ImageView(this);logo.setImageResource(com.mutairi.marantzremote.R.drawable.marantz_logo);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(200),dp(36));lp.gravity=Gravity.CENTER_HORIZONTAL;body.addView(logo,lp);
-        title=text("PERSONAL REMOTE",11,MUTED);title.setLetterSpacing(.2f);title.setGravity(Gravity.CENTER);gap(15);
+        title=text("PERSONAL REMOTE · v1.3",11,MUTED);title.setLetterSpacing(.2f);title.setGravity(Gravity.CENTER);gap(15);
         status=text("Choose a receiver on your Wi-Fi",13,MUTED);status.setVisibility(View.GONE);
         volume=text("—",62,GOLD);volume.setTypeface(Typeface.create("sans-serif-thin",Typeface.NORMAL));volume.setGravity(Gravity.CENTER);
         body.removeView(volume);LinearLayout dial=new LinearLayout(this);dial.setOrientation(LinearLayout.VERTICAL);dial.setGravity(Gravity.CENTER);
@@ -65,6 +66,11 @@ public class MainActivity extends Activity {
         containmentButton=inline(soundRow,"Level —",()->choose("Containment amount",new String[]{"1","2","3","4","5","6","7"},new String[]{"PSCNTAMT 01","PSCNTAMT 02","PSCNTAMT 03","PSCNTAMT 04","PSCNTAMT 05","PSCNTAMT 06","PSCNTAMT 07"}));containmentButton.setMinWidth(dp(90));
         soundHint=new TextView(this);soundHint.setTextSize(10);soundHint.setTextColor(MUTED);soundPanel.addView(soundHint);
         gap(20);text("INCOMING AUDIO",10,MUTED);format=text("—",14,GOLD);gap(16);
+        LinearLayout speakers=row();
+        inputSpeakers=new SpeakerView(this,"INPUT");outputSpeakers=new SpeakerView(this,"OUTPUT");
+        LinearLayout.LayoutParams leftMap=new LinearLayout.LayoutParams(0,dp(210),1);leftMap.setMargins(0,dp(16),dp(5),0);speakers.addView(inputSpeakers,leftMap);
+        LinearLayout.LayoutParams rightMap=new LinearLayout.LayoutParams(0,dp(210),1);rightMap.setMargins(dp(5),dp(16),0,0);speakers.addView(outputSpeakers,rightMap);
+        TextView channelNote=text("Gold = active · dim = inactive\nChannel routing, not sound levels. SW combines subwoofer outputs.",9,MUTED);channelNote.setGravity(Gravity.CENTER);
         notice=text("Controls follow the receiver’s reported inputs and listening modes.",12,MUTED);
         gap(16);body.addView(button("MORE SETTINGS ↗",()->openLink("http://"+host+"/")));
         gap(12);body.addView(button("Volume limit & connection ▾",()->connectionPanel.setVisibility(connectionPanel.getVisibility()==View.GONE?View.VISIBLE:View.GONE)));
@@ -88,6 +94,7 @@ public class MainActivity extends Activity {
     private void openLink(String url){if(url.startsWith("http://")&&!Protocol.localAddress(host)){notice.setText("Choose a receiver first.");return;}try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){notice.setText("No browser available.");}}
     private void enabled(boolean value){
         boolean fresh=value&&lastReply>0&&System.currentTimeMillis()-lastReply<12000,ready=fresh&&!commandPending;
+        if(inputSpeakers!=null){inputSpeakers.show(inputChannels,fresh);outputSpeakers.show(outputChannels,fresh);}
         for(Button b:controls){b.setEnabled(repeatControls.contains(b)?fresh:ready);b.setAlpha(fresh?1f:.4f);}
         if(mute!=null)mute.setEnabled(ready&&muted!=null);if(inputButton!=null)inputButton.setEnabled(ready&&!inputs.isEmpty());if(modeButton!=null)modeButton.setEnabled(ready&&!modes.isEmpty());if(slider!=null)slider.setEnabled(fresh&&currentVolume!=null);
         if(up!=null)up.setEnabled(fresh&&currentVolume!=null&&currentVolume<volumeLimit);if(down!=null)down.setEnabled(fresh&&currentVolume!=null&&currentVolume > -80);
@@ -106,17 +113,18 @@ public class MainActivity extends Activity {
         discovery.execute(()->{try{List<Discovery.Device> found=Discovery.search(this);runOnUiThread(()->{if(isFinishing()||isDestroyed())return;if(!foreground)return;if(found.isEmpty())new AlertDialog.Builder(this).setTitle("No Marantz found").setMessage("Use the same Wi-Fi as the receiver, enable Network Control, and avoid guest Wi-Fi. You can also enter its IP manually. Some models do not support this discovery or control protocol.").setPositiveButton("OK",null).show();else{String[] labels=new String[found.size()];for(int i=0;i<found.size();i++)labels[i]=found.get(i).toString();new AlertDialog.Builder(this).setTitle("Choose Marantz").setItems(labels,(d,i)->{Discovery.Device device=found.get(i);connect(device.ip,device.name);}).setNegativeButton("Cancel",null).show();}});}catch(Exception e){runOnUiThread(()->notice.setText("Discovery failed: "+e.getMessage()+". Try entering the IP."));}finally{runOnUiThread(()->{scanning=false;scan.setEnabled(true);scan.setText("Find Marantz receivers");});}});
     }
     private void connect(String ip,String name){
-        generation++;int current=generation;if(connection!=null)connection.close();host=ip;receiverName=name;connected=false;commandPending=false;lastReply=0;inputs=new ArrayList<>();modes=new ArrayList<>();reset();title.setText("PERSONAL REMOTE");status.setText("Connecting · "+ip);enabled(false);
+        generation++;int current=generation;if(connection!=null)connection.close();host=ip;receiverName=name;connected=false;commandPending=false;lastReply=0;inputs=new ArrayList<>();modes=new ArrayList<>();reset();title.setText("PERSONAL REMOTE · v1.3");status.setText("Connecting · "+ip);enabled(false);
         getPreferences(0).edit().putString("host",ip).putString("name",name).apply();
         connection=new ReceiverConnection(ip,new ReceiverConnection.Listener(){
             public void status(boolean ok,String detail){runOnUiThread(()->{if(current!=generation||!foreground)return;connected=ok;reset();enabled(ok);status.setText((ok?"Connected · ":"")+detail);});}
             public void line(String line){runOnUiThread(()->{if(current!=generation||!foreground)return;parse(line);});}
             public void capabilities(List<ReceiverHttp.Choice> in,List<ReceiverHttp.Choice> sound){runOnUiThread(()->{if(current!=generation||!foreground)return;inputs=in;modes=sound;renderNames();enabled(connected);});}
+            public void channels(SpeakerChannels.Panel in,SpeakerChannels.Panel out){runOnUiThread(()->{if(current!=generation||!foreground)return;inputChannels=in;outputChannels=out;enabled(connected);});}
             public void feedback(boolean pending,String message){runOnUiThread(()->{if(current!=generation||!foreground)return;commandPending=pending;notice.setText(message);notice.setTextColor(message.startsWith("Confirmed")?Color.rgb(183,209,174):MUTED);enabled(connected);});}
         });
         connection.setLimit(volumeLimit);
     }
-    private void reset(){muted=null;currentVolume=null;tone=null;lfc=null;bass=null;containment=null;modeRaw="";inputCode="";if(slider!=null)renderSlider();volume.setText("—");source.setText("—");mode.setText("—");format.setText("—");mute.setText("Mute");}
+    private void reset(){inputChannels=null;outputChannels=null;muted=null;currentVolume=null;tone=null;lfc=null;bass=null;containment=null;modeRaw="";inputCode="";if(slider!=null)renderSlider();volume.setText("—");source.setText("—");mode.setText("—");format.setText("—");mute.setText("Mute");}
     private void parse(String line){
         if(!line.startsWith("→ "))lastReply=System.currentTimeMillis();
         activity.addLast(line);while(activity.size()>65)activity.removeFirst();log.setText(android.text.TextUtils.join("\n",activity));

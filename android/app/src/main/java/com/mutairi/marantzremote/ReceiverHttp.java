@@ -61,6 +61,11 @@ public final class ReceiverHttp {
         String body="<?xml version='1.0' encoding='utf-8'?>\n<tx><cmd id=\"3\"><name>"+name+"</name><list><param name=\""+param+"\">"+value+"</param></list></cmd></tx>";
         Document d=xml(transport.request("/goform/AppCommand0300.xml",body));if(d.getElementsByTagName("error").getLength()>0)throw new IOException("Receiver rejected request");return d;
     }
+    public SpeakerChannels.Panel channels(boolean input)throws Exception{
+        String name=input?"GetInputSignal":"GetActiveSpeaker",prefix=input?"inputsig":"activesp";
+        String body="<?xml version='1.0' encoding='utf-8'?>\n<tx><cmd id=\"3\"><name>"+name+"</name><list><param name=\""+prefix+"all\"></param></list></cmd></tx>";
+        return SpeakerChannels.parse(xml(transport.request("/goform/AppCommand0300.xml",body)),name,prefix);
+    }
     public ModeList modes()throws Exception{
         Document d=call("GetSoundModeList","genrelist","");String genre="";
         NodeList params=d.getElementsByTagName("param");for(int i=0;i<params.getLength();i++){Element e=(Element)params.item(i);if(e.getAttribute("name").equals("genrelist"))genre=e.getTextContent().trim();}

@@ -89,19 +89,74 @@ def sound_mode_list(root):
     if not genre or not values: raise ValueError('Receiver did not provide its current listening-mode list')
     return genre,values
 
+BED_CHANNELS={'FL','FR','C','SL','SR','SBL','SBR','SB','FWL','FWR'}
+HEIGHT_CHANNELS={'FHL','FHR','SHL','SHR','RHL','RHR','TFL','TFR','TML','TMR','TRL','TRR','TS','CH','TOP','FDL','FDR','SDL','SDR','BDL','BDR'}
+SUB_CHANNELS={'LFE','SW','SW1','SW2','SW3','SW4'}
+def channel_panel(root,name,prefix):
+    """Preserve receiver slots; 2 is active, 1 inactive, 0 absent."""
+    cmd=next((c for c in root.findall('cmd') if c.findtext('name')==name),None)
+    if cmd is None or cmd.find('error') is not None: return None
+    params=cmd.findall('list/param')
+    if not params: return None
+    channels=[];seen=set()
+    for p in params:
+        key=p.get('name','')
+        if not re.fullmatch(re.escape(prefix)+r'[a-e][1-4]',key): return None
+        slot=key[len(prefix):];control=p.get('control');label=(p.text or '').strip()
+        if slot in seen or control not in ('0','1','2') or len(label)>32: return None
+        seen.add(slot)
+        if control=='0': continue
+        if not label: return None
+        channels.append({'slot':slot,'label':label,'active':control=='2'})
+    active={c['label'].upper() for c in channels if c['active']}
+    if not active: layout='No active channels'
+    elif active-(BED_CHANNELS|HEIGHT_CHANNELS|SUB_CHANNELS): layout=None
+    else:
+        bed=len(active&BED_CHANNELS);height=len(active&HEIGHT_CHANNELS)
+        subs=len(active&SUB_CHANNELS)
+        layout=f'{bed}.{subs}'+(f'.{height}' if height else '')
+    return {'channels':channels,'layout':layout}
+
+def read_channel_panel(host,port,name,prefix):
+    if (name,prefix) not in (('GetInputSignal','inputsig'),('GetActiveSpeaker','activesp')):
+        raise ValueError('Unsupported channel query')
+    data=(f'<?xml version="1.0" encoding="utf-8"?>\n<tx><cmd id="3"><name>{name}</name><list><param name="{prefix}all"></param></list></cmd></tx>').encode()
+    return channel_panel(read_xml(f'http://{host}:{port}/goform/AppCommand0300.xml',data),name,prefix)
+
 class Receiver:
     def __init__(self,host='10.10.10.40',port=23):
         self.host,self.port=host,port;self.sock=None;self.lock=threading.RLock();self.stop=threading.Event()
         self.state={'connected':False,'power':'Unknown','volume':None,'mute':None,'tone':None,'bass':None,'lfc':None,'containment':None,'input':'Unknown','mode':'Unknown','format':'Unknown','error':'Connecting…','inputs':[],'modes':[],'name':'Marantz','host':host,'last_update':None,'command':None}
         self.log=deque(maxlen=100);self.last_received=0;self.volume_received=0;self.mode_batch={};self.control_port=8080
+        self.state['channels']={'input':None,'output':None}
+        self.channel_epoch=0;self.channel_wake=threading.Event()
+    def invalidate_channels(self):
+        # Caller holds lock; incrementing also rejects HTTP replies already in flight.
+        self.channel_epoch+=1;self.state['channels']={'input':None,'output':None};self.channel_wake.set()
+    def refresh_channels(self):
+        with self.lock:
+            if not self.state['connected'] or self.state['power']!='On': return
+            epoch=self.channel_epoch
+        for key,name,prefix in (('input','GetInputSignal','inputsig'),('output','GetActiveSpeaker','activesp')):
+            try: panel=read_channel_panel(self.host,self.control_port,name,prefix)
+            except (OSError,ValueError,ET.ParseError): panel=None
+            with self.lock:
+                if self.stop.is_set() or epoch!=self.channel_epoch: return
+                self.state['channels'][key]=dict(panel,updated_at=time.time()) if panel is not None else None
+    def poll_channels(self):
+        while not self.stop.is_set():
+            self.channel_wake.clear();self.refresh_channels();self.channel_wake.wait(3)
     def snapshot(self):
         with self.lock:
             p=self.state['command']
             if p and p['status']=='pending' and time.monotonic()-p['started']>5: p.update(status='unconfirmed',message=('Requested mode was not confirmed. Receiver reports: '+self.state['mode'] if p['field']=='mode' else 'No matching reply. The receiver may have ignored this command.'))
-            return dict(self.state,log=list(self.log))
+            fresh=self.state['connected'] and self.state['power']=='On' and time.monotonic()-self.last_received<12
+            channels={key:panel if fresh and panel is not None and time.time()-panel['updated_at']<10 else None for key,panel in self.state['channels'].items()}
+            return dict(self.state,channels=channels,log=list(self.log))
     def receive(self,line):
         if not line: return
         with self.lock:
+            before=(self.state['power'],self.state['input'],mode_key(self.state['mode']),mode_key(self.state['format']))
             self.last_received=time.monotonic();self.state['last_update']=time.time()
             self.log.append({'time':time.strftime('%H:%M:%S'),'text':line});field=None
             if re.fullmatch(r'MV\d{2,3}',line):
@@ -127,6 +182,7 @@ class Receiver:
                         if label.upper()=='DOLBY AUDIO - DOLBY DIGITAL PLUS': display='Dolby Digital Plus · original'
                         elif label.upper()=='DOLBY ATMOS/DSURR' and 'DDPLUS' in mode_key(self.state['format']): display='Dolby Digital Plus + Dolby Surround'
                         self.mode_batch[code]={'value':code,'label':display,'aliases':aliases}
+            if before!=(self.state['power'],self.state['input'],mode_key(self.state['mode']),mode_key(self.state['format'])): self.invalidate_channels()
             p=self.state['command']
             if field and p and p['status']=='pending' and p['field']==field:
                 actual,expected=self.state[field],p['expected']
@@ -147,6 +203,7 @@ class Receiver:
             time.sleep(.2)
         after_genre,after_items=sound_mode_list(sound_mode_call(self.host,self.control_port,'GetSoundModeList',{'genrelist':''}))
         if after_genre==genre and any(item['number']==target['number'] and item['label']==target['label'] and item['selected'] for item in after_items):
+            if mode_key(self.state['mode'])!=mode_key(target['label']): self.invalidate_channels()
             self.state['mode']=target['label']
             pending.update(status='confirmed',message='Confirmed by receiver')
         else:
@@ -203,8 +260,9 @@ class Receiver:
                 raise ValueError(str(error)) from error
             return p['id']
     def close(self):
-        self.stop.set()
+        self.stop.set();self.channel_wake.set()
         with self.lock:
+            self.invalidate_channels()
             if self.sock:
                 try: self.sock.shutdown(socket.SHUT_RDWR)
                 except OSError: pass
@@ -223,6 +281,7 @@ class Receiver:
             except (OSError,ValueError,ET.ParseError): pass
     def run(self):
         threading.Thread(target=self.load_capabilities,daemon=True).start()
+        threading.Thread(target=self.poll_channels,daemon=True).start()
         while not self.stop.is_set():
             try:
                 with socket.create_connection((self.host,self.port),3) as s:
@@ -230,6 +289,7 @@ class Receiver:
                     with self.lock:
                         if self.stop.is_set(): return
                         self.sock=s;self.last_received=time.monotonic();self.state.update(connected=True,error='',power='Unknown',volume=None,mute=None,input='Unknown',mode='Unknown',format='Unknown',last_update=None,modes=[]);self.mode_batch={}
+                        self.invalidate_channels()
                     buf=b'';last=0
                     while not self.stop.is_set():
                         if time.monotonic()-self.last_received>25: raise ConnectionError('Receiver stopped responding; reconnecting')
@@ -245,6 +305,7 @@ class Receiver:
                             line,buf=buf.split(b'\r',1);self.receive(line.decode('ascii',errors='replace').strip())
             except (OSError,ConnectionError) as error:
                 with self.lock:
+                    self.invalidate_channels()
                     self.sock=None;self.state.update(connected=False,error=str(error));p=self.state['command']
                     if p and p['status']=='pending': p.update(status='unconfirmed',message='Disconnected before confirmation. Command will not be replayed.')
                 self.stop.wait(2)

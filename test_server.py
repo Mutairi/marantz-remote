@@ -178,3 +178,66 @@ class RemoteTests(unittest.TestCase):
         finally:http.shutdown();http.server_close();thread.join()
 
 if __name__=='__main__':unittest.main()
+
+class ChannelTests(unittest.TestCase):
+    def xml(self,name,prefix,values):
+        import xml.etree.ElementTree as ET
+        params=''.join(f'<param name="{prefix}{slot}" control="{control}">{label}</param>' for slot,label,control in values)
+        return ET.fromstring(f'<rx><cmd><name>{name}</name><list>{params}</list></cmd></rx>')
+    def test_actual_input_and_output_are_separate(self):
+        root=self.xml('GetInputSignal','inputsig',[('b2','FL',2),('c2','C',2),('d2','FR',2),('b3','SL',2),('d3','SR',2),('b4','SBL',2),('d4','SBR',2),('b1','LFE',2)])
+        p=server.channel_panel(root,'GetInputSignal','inputsig')
+        self.assertEqual(p['layout'],'7.1');self.assertEqual(len(p['channels']),8)
+        out=server.channel_panel(self.xml('GetActiveSpeaker','activesp',[('b2','FL',2),('d2','FR',2),('b1','SW',2),('c2','C',1)]),'GetActiveSpeaker','activesp')
+        self.assertEqual(out['layout'],'2.1');self.assertFalse(out['channels'][-1]['active'])
+    def test_height_unknown_absent_and_silent_channels(self):
+        p=server.channel_panel(self.xml('GetActiveSpeaker','activesp',[('b2','FL',2),('d2','FR',2),('a1','TFL',2),('e1','TFR',2),('b1','SW',1),('c1','',0)]),'GetActiveSpeaker','activesp')
+        self.assertEqual(p['layout'],'2.0.2');self.assertEqual(len(p['channels']),5)
+        p=server.channel_panel(self.xml('GetActiveSpeaker','activesp',[('a1','FUTURE',2)]),'GetActiveSpeaker','activesp')
+        self.assertIsNone(p['layout']);self.assertEqual(p['channels'][0]['label'],'FUTURE')
+        p=server.channel_panel(self.xml('GetInputSignal','inputsig',[('b2','FL',1)]),'GetInputSignal','inputsig')
+        self.assertEqual(p['layout'],'No active channels')
+    def test_unsupported_and_invalid_are_unavailable(self):
+        import xml.etree.ElementTree as ET
+        for xml in ['<rx/>','<rx><cmd><name>GetInputSignal</name><list/></cmd></rx>', '<rx><cmd><name>GetInputSignal</name><list><param name="inputsigb2" control="3">FL</param></list></cmd></rx>']:
+            self.assertIsNone(server.channel_panel(ET.fromstring(xml),'GetInputSignal','inputsig'))
+    def test_channel_query_preserves_required_newline(self):
+        root=self.xml('GetInputSignal','inputsig',[('b2','FL',2),('d2','FR',2)])
+        with patch.object(server,'read_xml',return_value=root) as read:
+            p=server.read_channel_panel('10.10.10.40',8080,'GetInputSignal','inputsig')
+        self.assertEqual(p['layout'],'2.0');self.assertIn(b'?>\n<tx>',read.call_args.args[1])
+
+class ChannelRefreshTests(unittest.TestCase):
+    def ready(self):
+        r=server.Receiver();r.state.update(connected=True,power='On',input='BD',mode='STEREO');r.last_received=time.monotonic();return r
+    def panel(self):return {'channels':[{'slot':'b2','label':'FL','active':True}], 'layout':'1.0'}
+    def test_failed_output_does_not_hide_valid_input(self):
+        r=self.ready()
+        with patch.object(server,'read_channel_panel',side_effect=[self.panel(),OSError('unsupported')]):r.refresh_channels()
+        s=r.snapshot()['channels'];self.assertEqual(s['input']['layout'],'1.0');self.assertIsNone(s['output'])
+    def test_expiry_and_standby_clear_lights(self):
+        r=self.ready()
+        with patch.object(server,'read_channel_panel',return_value=self.panel()):r.refresh_channels()
+        self.assertIsNotNone(r.snapshot()['channels']['input'])
+        with patch.object(server.time,'time',return_value=time.time()+15):self.assertIsNone(r.snapshot()['channels']['input'])
+        r.receive('PWSTANDBY');self.assertIsNone(r.snapshot()['channels']['input'])
+    def test_late_response_after_source_change_is_discarded(self):
+        r=self.ready()
+        def late(*a):r.receive('SIGAME');return self.panel()
+        with patch.object(server,'read_channel_panel',side_effect=late):r.refresh_channels()
+        self.assertIsNone(r.snapshot()['channels']['input']);self.assertIsNone(r.snapshot()['channels']['output'])
+    def test_mode_change_invalidates_existing_channels(self):
+        r=self.ready()
+        with patch.object(server,'read_channel_panel',return_value=self.panel()):r.refresh_channels()
+        r.receive('MSDIRECT');self.assertIsNone(r.snapshot()['channels']['input'])
+
+class ChannelIndexedModeTests(unittest.TestCase):
+    http_receiver=RemoteTests.http_receiver
+    mode_xml=RemoteTests.mode_xml
+    def test_indexed_mode_change_clears_previous_channel_snapshot(self):
+        r=self.http_receiver();r.state['power']='On'
+        panel={'layout':'2.0','channels':[]}
+        with patch.object(server,'read_channel_panel',return_value=panel):r.refresh_channels()
+        self.assertIsNotNone(r.snapshot()['channels']['output'])
+        with patch.object(server,'sound_mode_call',side_effect=[self.mode_xml(),server.ET.fromstring('<rx><cmd>OK</cmd></rx>'),self.mode_xml('42')]):r.execute('MSDOLBY DIGITAL +',-10)
+        self.assertIsNone(r.snapshot()['channels']['output'])

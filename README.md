@@ -14,12 +14,19 @@ A minimal, unofficial Marantz remote. Warm charcoal, gold controls, and a direct
 
 In GitHub Actions, open a successful run and download its platform artifact. Sign in to GitHub to access this private repository's downloads. Artifacts expire after 30 days; download a newer build or rebuild when needed.
 
+## New in v1.3
+
+Separate INPUT and OUTPUT speaker diagrams show the receiver's live channel routing. Active channels glow gold; inactive channels are dimmed. Layout counts can differ (for example 7.1 input and 5.1 output). Surround, back, wide, and height labels follow the receiver. This is channel routing, not a meter of instantaneous sound or proof that a physical speaker is connected. SW is a combined subwoofer indicator, so `.1` does not count physical subwoofers. Missing, unsupported, standby, disconnected, or stale readings show **Unavailable** rather than a guessed layout. New channel readings refresh about every three seconds.
+
+**[Download v1.3](https://github.com/Mutairi/marantz-remote/releases/tag/v1.3)** — for Windows, extract the Windows ZIP and run its single Marantz-Remote.exe. Close the previous version first.
+
 ## Controls
 
 All platforms offer power, volume, mute, receiver discovery, input selection, listening modes, and an app volume limit. Windows and browser share the same interface and backend; Android has its own native interface.
 
 | Feature | Browser / Windows | Android |
 | --- | --- | --- |
+| Live input/output channel diagrams | Yes (1.3) | Yes (1.3) |
 | Volume slider and app limit | Yes | Yes |
 | Gold dial and volume presets | Yes | Yes (1.2) |
 | Custom receiver input names | Yes | Yes (1.2) |

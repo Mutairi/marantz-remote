@@ -1,9 +1,9 @@
 name: Browser Checks
 on:
   push:
-    paths: ['server.py', 'test_server.py', '.github/workflows/browser.yml']
+    paths: ['server.py', 'test_server.py', 'test_browser.py', 'index.html', '.github/workflows/browser.yml']
   pull_request:
-    paths: ['server.py', 'test_server.py', '.github/workflows/browser.yml']
+    paths: ['server.py', 'test_server.py', 'test_browser.py', 'index.html', '.github/workflows/browser.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,3 +16,4 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest -v test_server.py
+      - run: python test_browser.py
