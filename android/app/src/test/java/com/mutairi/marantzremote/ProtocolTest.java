@@ -17,4 +17,8 @@ public class ProtocolTest {
         try{Protocol.volumeRequest("MV80",-20,-10);fail();}catch(IllegalArgumentException expected){}
     }
     @Test public void confirmationRequiresMatchingReply(){assertTrue(Protocol.confirmed("MSMCH STEREO","SYSMI Multi Ch Stereo"));assertFalse(Protocol.confirmed("MV605","MVMAX 605"));assertFalse(Protocol.confirmed("MUON","MUOFF"));assertTrue(Protocol.confirmed("MV605","MV605"));}
+    @org.junit.Test public void onlyOfficialIlluminationValuesAllowed(){
+        for(int i=1;i<=5;i++)org.junit.Assert.assertTrue(Protocol.allowed("IL"+i));
+        org.junit.Assert.assertFalse(Protocol.allowed("IL0"));org.junit.Assert.assertFalse(Protocol.allowed("IL6"));
+    }
 }

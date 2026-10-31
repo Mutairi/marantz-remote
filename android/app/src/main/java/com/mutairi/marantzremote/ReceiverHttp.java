@@ -32,11 +32,14 @@ public final class ReceiverHttp {
             return out;
         }
     }
-    private final Transport transport;
+    private final Transport transport;private final Transport[] lightingTransports;private volatile Transport lightingTransport;
     public ReceiverHttp(String host){
         if(!Protocol.localAddress(host))throw new IllegalArgumentException("Private IPv4 required");
-        transport=(path,body)->{
-            HttpURLConnection c=(HttpURLConnection)new URL("http://"+host+":8080"+path).openConnection();
+        transport=localTransport(host,8080);lightingTransports=new Transport[]{localTransport(host,11080),localTransport(host,80)};
+    }
+    private static Transport localTransport(String host,int port){
+        return (path,body)->{
+            HttpURLConnection c=(HttpURLConnection)new URL("http://"+host+":"+port+path).openConnection();
             c.setConnectTimeout(1500);c.setReadTimeout(1500);c.setInstanceFollowRedirects(false);
             try{
                 if(body!=null){c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/x-www-form-urlencoded");byte[] bytes=body.getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
@@ -48,7 +51,7 @@ public final class ReceiverHttp {
             }finally{c.disconnect();}
         };
     }
-    ReceiverHttp(Transport transport){this.transport=transport;}
+    ReceiverHttp(Transport transport){this.transport=transport;lightingTransports=new Transport[]{transport};}
     static Document xml(String text)throws Exception{
         if(text.length()>262144||text.toUpperCase(Locale.ROOT).contains("<!DOCTYPE")||text.toUpperCase(Locale.ROOT).contains("<!ENTITY"))throw new IOException("Unsafe receiver XML");
         DocumentBuilderFactory f=DocumentBuilderFactory.newInstance();f.setExpandEntityReferences(false);
@@ -60,6 +63,25 @@ public final class ReceiverHttp {
         if(!Arrays.asList("GetSoundModeList","SetSoundModeList").contains(name)||!Arrays.asList("genrelist","listno").contains(param)||!value.matches("[0-9]*"))throw new IllegalArgumentException("Invalid mode command");
         String body="<?xml version='1.0' encoding='utf-8'?>\n<tx><cmd id=\"3\"><name>"+name+"</name><list><param name=\""+param+"\">"+value+"</param></list></cmd></tx>";
         Document d=xml(transport.request("/goform/AppCommand0300.xml",body));if(d.getElementsByTagName("error").getLength()>0)throw new IOException("Receiver rejected request");return d;
+    }
+    private String readIllumination(Transport t)throws Exception{
+        Document d=xml(t.request("/ajax/general/get_config?type=18",null));Element root=d.getDocumentElement();
+        String value=text(root,"IlluminationBrightness");
+        if(!root.getTagName().equals("FrontPanel")||!value.matches("[1-5]"))throw new IOException("LED illumination unavailable");
+        return value;
+    }
+    public String illumination()throws Exception{
+        if(lightingTransport!=null)try{return readIllumination(lightingTransport);}catch(Exception ignored){}
+        for(Transport t:lightingTransports)try{String value=readIllumination(t);lightingTransport=t;return value;}catch(Exception ignored){}
+        throw new IOException("LED illumination unavailable");
+    }
+    public String setIllumination(String value)throws Exception{
+        if(value==null||!value.matches("[1-5]"))throw new IllegalArgumentException("Invalid LED illumination");
+        String before=illumination();Transport target=lightingTransport;
+        if(!before.equals(value))target.request("/ajax/general/set_config?type=18&data="+URLEncoder.encode("<IlluminationBrightness>"+value+"</IlluminationBrightness>","UTF-8"),null);
+        String after=readIllumination(target);
+        if(!after.equals(value))throw new IOException("Receiver did not confirm LED illumination. No automatic retry made.");
+        return after;
     }
     public SpeakerChannels.Panel channels(boolean input)throws Exception{
         String name=input?"GetInputSignal":"GetActiveSpeaker",prefix=input?"inputsig":"activesp";

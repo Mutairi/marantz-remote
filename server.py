@@ -18,16 +18,32 @@ def private_ip(value):
     except (ValueError,TypeError): return False
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args): return None
-def read_xml(url, data=None):
+def receiver_http(url, data=None):
     p=urllib.parse.urlsplit(url)
     if p.scheme!='http' or not private_ip(p.hostname) or p.username or p.password: raise ValueError('Invalid device URL')
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
     request=urllib.request.Request(url,data=data)
     with opener.open(request,timeout=1.5) as r: data=r.read(262145)
-    if len(data)>262144 or b'<!DOCTYPE' in data.upper() or b'<!ENTITY' in data.upper(): raise ValueError('Invalid device XML')
+    if len(data)>262144: raise ValueError('Oversized receiver response')
+    return data
+def read_xml(url, data=None):
+    data=receiver_http(url,data)
+    if b'<!DOCTYPE' in data.upper() or b'<!ENTITY' in data.upper(): raise ValueError('Invalid device XML')
     root=ET.fromstring(data)
     for node in root.iter(): node.tag=node.tag.split('}')[-1]
     return root
+ILLUMINATION={'1':'Auto','2':'Bright','3':'Dim','4':'Dark','5':'Off'}
+def read_illumination(host,port):
+    if port not in (11080,80): raise ValueError('Unsupported Web Control port')
+    root=read_xml(f'http://{host}:{port}/ajax/general/get_config?type=18')
+    value=root.findtext('IlluminationBrightness','').strip()
+    if root.tag!='FrontPanel' or value not in ILLUMINATION: raise ValueError('LED illumination unavailable')
+    return value
+def write_illumination(host,port,value):
+    if value not in ILLUMINATION or port not in (11080,80): raise ValueError('Invalid LED illumination')
+    query=urllib.parse.urlencode({'type':'18','data':f'<IlluminationBrightness>{value}</IlluminationBrightness>'})
+    receiver_http(f'http://{host}:{port}/ajax/general/set_config?{query}')
+
 def renamed_inputs(host, port):
     data=b'<?xml version="1.0" encoding="utf-8"?>\n<tx><cmd id="1">GetRenameSource</cmd></tx>'
     root=read_xml(f'http://{host}:{port}/goform/AppCommand.xml',data)
@@ -129,6 +145,8 @@ class Receiver:
         self.state={'connected':False,'power':'Unknown','volume':None,'mute':None,'tone':None,'bass':None,'lfc':None,'containment':None,'input':'Unknown','mode':'Unknown','format':'Unknown','error':'Connecting…','inputs':[],'modes':[],'name':'Marantz','host':host,'last_update':None,'command':None}
         self.log=deque(maxlen=100);self.last_received=0;self.volume_received=0;self.mode_batch={};self.control_port=8080
         self.state['channels']={'input':None,'output':None}
+        self.state.update(illumination=None,illumination_updated_at=None)
+        self.illumination_port=11080;self.illumination_epoch=0
         self.channel_epoch=0;self.channel_wake=threading.Event()
     def invalidate_channels(self):
         # Caller holds lock; incrementing also rejects HTTP replies already in flight.
@@ -143,16 +161,27 @@ class Receiver:
             with self.lock:
                 if self.stop.is_set() or epoch!=self.channel_epoch: return
                 self.state['channels'][key]=dict(panel,updated_at=time.time()) if panel is not None else None
+    def refresh_illumination(self):
+        with self.lock:
+            if not self.state['connected'] or self.state['power']!='On': return
+            epoch,lighting_epoch=self.channel_epoch,self.illumination_epoch
+        value=None;port=self.illumination_port
+        for candidate in dict.fromkeys((port,11080,80)):
+            try: value=read_illumination(self.host,candidate);port=candidate;break
+            except (OSError,ValueError,ET.ParseError): pass
+        with self.lock:
+            if self.stop.is_set() or epoch!=self.channel_epoch or lighting_epoch!=self.illumination_epoch: return
+            self.illumination_port=port;self.state.update(illumination=value,illumination_updated_at=time.time() if value else None)
     def poll_channels(self):
         while not self.stop.is_set():
-            self.channel_wake.clear();self.refresh_channels();self.channel_wake.wait(3)
+            self.channel_wake.clear();self.refresh_channels();self.refresh_illumination();self.channel_wake.wait(3)
     def snapshot(self):
         with self.lock:
             p=self.state['command']
             if p and p['status']=='pending' and time.monotonic()-p['started']>5: p.update(status='unconfirmed',message=('Requested mode was not confirmed. Receiver reports: '+self.state['mode'] if p['field']=='mode' else 'No matching reply. The receiver may have ignored this command.'))
             fresh=self.state['connected'] and self.state['power']=='On' and time.monotonic()-self.last_received<12
             channels={key:panel if fresh and panel is not None and time.time()-panel['updated_at']<10 else None for key,panel in self.state['channels'].items()}
-            return dict(self.state,channels=channels,log=list(self.log))
+            return dict(self.state,channels=channels,illumination=self.state['illumination'] if fresh and self.state['illumination_updated_at'] and time.time()-self.state['illumination_updated_at']<12 else None,log=list(self.log))
     def receive(self,line):
         if not line: return
         with self.lock:
@@ -182,6 +211,8 @@ class Receiver:
                         if label.upper()=='DOLBY AUDIO - DOLBY DIGITAL PLUS': display='Dolby Digital Plus · original'
                         elif label.upper()=='DOLBY ATMOS/DSURR' and 'DDPLUS' in mode_key(self.state['format']): display='Dolby Digital Plus + Dolby Surround'
                         self.mode_batch[code]={'value':code,'label':display,'aliases':aliases}
+            if before[0]!=self.state['power']:
+                self.illumination_epoch+=1;self.state.update(illumination=None,illumination_updated_at=None)
             if before!=(self.state['power'],self.state['input'],mode_key(self.state['mode']),mode_key(self.state['format'])): self.invalidate_channels()
             p=self.state['command']
             if field and p and p['status']=='pending' and p['field']==field:
@@ -240,6 +271,9 @@ class Receiver:
                     expected=self.state['bass']+(1 if cmd.endswith('UP') else -1)
                     if not -6<=expected<=6: raise ValueError('Bass limit reached')
                     cmd=f'PSBAS {expected+50:02d}';field='bass'
+            elif re.fullmatch(r'IL[1-5]',cmd):
+                if self.snapshot()['illumination'] is None: raise ValueError('Waiting for fresh LED illumination status')
+                field='illumination';expected=cmd[2:]
             elif cmd in ('MUON','MUOFF'): field='mute';expected=cmd=='MUON'
             elif cmd in ('PWON','PWSTANDBY'): field='power';expected='On' if cmd=='PWON' else 'Standby'
             elif cmd.startswith('SI') and cmd[2:] in {x['value'] for x in self.state['inputs']}: field='input';expected=cmd[2:]
@@ -250,12 +284,20 @@ class Receiver:
                 p['aliases']=[expected]+[alias for x in self.state['modes'] if x['value']==expected for alias in x.get('aliases',[x['label']])]
             self.state['command']=p
             try:
+                if field=='illumination':
+                    self.illumination_epoch+=1
+                    write_illumination(self.host,self.illumination_port,expected)
+                    actual=read_illumination(self.host,self.illumination_port)
+                    self.state.update(illumination=actual,illumination_updated_at=time.time())
+                    p.update(status='confirmed' if actual==expected else 'unconfirmed',message='Confirmed by receiver' if actual==expected else 'Receiver did not confirm the LED setting. No automatic retry was made.')
+                    return p['id']
                 if field=='mode' and expected in ('DOLBY DIGITAL +','DOLBY DIGITAL'):
                     self.select_indexed_mode(p)
                 else:
                     self.send(cmd)
                 self.send({'volume':'MV?','mute':'MU?','power':'PW?','input':'SI?','mode':'MS?','tone':'PSTONE CTRL ?','bass':'PSBAS ?','lfc':'PSLFC ?','containment':'PSCNTAMT ?'}[field])
             except (OSError,ValueError,ET.ParseError) as error:
+                if field=='illumination': self.state.update(illumination=None,illumination_updated_at=None)
                 p.update(status='unconfirmed',message='Selection could not be confirmed. No automatic retry was made.')
                 raise ValueError(str(error)) from error
             return p['id']
@@ -288,7 +330,7 @@ class Receiver:
                     s.settimeout(.5)
                     with self.lock:
                         if self.stop.is_set(): return
-                        self.sock=s;self.last_received=time.monotonic();self.state.update(connected=True,error='',power='Unknown',volume=None,mute=None,input='Unknown',mode='Unknown',format='Unknown',last_update=None,modes=[]);self.mode_batch={}
+                        self.sock=s;self.last_received=time.monotonic();self.state.update(illumination=None,illumination_updated_at=None,connected=True,error='',power='Unknown',volume=None,mute=None,input='Unknown',mode='Unknown',format='Unknown',last_update=None,modes=[]);self.mode_batch={}
                         self.invalidate_channels()
                     buf=b'';last=0
                     while not self.stop.is_set():
@@ -306,7 +348,7 @@ class Receiver:
             except (OSError,ConnectionError) as error:
                 with self.lock:
                     self.invalidate_channels()
-                    self.sock=None;self.state.update(connected=False,error=str(error));p=self.state['command']
+                    self.sock=None;self.state.update(illumination=None,illumination_updated_at=None,connected=False,error=str(error));p=self.state['command']
                     if p and p['status']=='pending': p.update(status='unconfirmed',message='Disconnected before confirmation. Command will not be replayed.')
                 self.stop.wait(2)
 class App:

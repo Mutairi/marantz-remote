@@ -29,7 +29,8 @@ def main():
             with urllib.request.urlopen('http://127.0.0.1:8765/', timeout=5) as response:
                 page = response.read()
                 assert b'MORE SETTINGS' in page
-                assert b'inputSpeakers' in page and b'outputSpeakers' in page and b'v1.3' in page
+                assert b'illumination' in page
+                assert b'inputSpeakers' in page and b'outputSpeakers' in page and b'v1.4' in page
             return
         import webview
         threading.Thread(target=server.app.receiver.run, daemon=True).start()

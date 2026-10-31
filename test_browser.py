@@ -9,9 +9,14 @@ script='''
 (async()=>{const result=document.createElement('pre');result.id='test-result';document.body.append(result);
 try{
 const check=(yes,message)=>{if(!yes)throw Error(message);};
-state=FIXTURE;state.last_update=Date.now()/1000;
+state=FIXTURE;state.last_update=Date.now()/1000;state.illumination='3';state.illumination_updated_at=Date.now()/1000;
 const input={updated_at:Date.now()/1000,layout:'7.1',channels:[{slot:'b2',label:'FL',active:true},{slot:'d2',label:'FR',active:true},{slot:'c2',label:'C',active:false},{slot:'b1',label:'LFE',active:true}]};
 state.channels={input,output:{...input,layout:'5.1'}};render();
+check($('illumination').value==='3','receiver reported illumination selected');
+check(!$('illumination').disabled,'fresh illumination enabled');
+check([...$('illumination').options].some(o=>o.text.includes('Dark')),'official Dark option');
+state.illumination_updated_at-=20;render();check($('illumination').disabled,'stale illumination disabled');
+state.illumination_updated_at=Date.now()/1000;render();
 check($('inputLayout').textContent==='7.1','input caption');
 check($('outputLayout').textContent==='5.1','independent output caption');
 check($('inputSpeakers').querySelectorAll('.speaker.active').length===3,'only active channels glow');
@@ -26,6 +31,7 @@ check(!$('inputSpeakers').querySelector('.active'),'standby lights cleared');
 state.power='On';render();check($('inputSpeakers').querySelector('.active'),'fresh status restored');
 window.fetch=async()=>{throw Error('offline')};await refresh();
 check(!$('inputSpeakers').querySelector('.active'),'local service failure lights cleared');
+check($('illumination').disabled,'offline illumination disabled');
 result.textContent='PASS: channel display, independent captions, inactive/active, accessibility, expiry, standby, offline, viewport';
 }catch(e){result.textContent='FAIL: '+e.message;}})();
 '''.replace('FIXTURE',json.dumps(fixture))

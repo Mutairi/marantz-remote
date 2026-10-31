@@ -241,3 +241,48 @@ class ChannelIndexedModeTests(unittest.TestCase):
         self.assertIsNotNone(r.snapshot()['channels']['output'])
         with patch.object(server,'sound_mode_call',side_effect=[self.mode_xml(),server.ET.fromstring('<rx><cmd>OK</cmd></rx>'),self.mode_xml('42')]):r.execute('MSDOLBY DIGITAL +',-10)
         self.assertIsNone(r.snapshot()['channels']['output'])
+
+class IlluminationTests(unittest.TestCase):
+    def test_read_uses_separate_front_panel_illumination(self):
+        r=server.ET.fromstring('<FrontPanel><DisplaysBrightness>3</DisplaysBrightness><IlluminationBrightness>1</IlluminationBrightness></FrontPanel>')
+        with patch.object(server,'read_xml',return_value=r) as read:
+            self.assertEqual(server.read_illumination('10.10.10.40',11080),'1')
+            self.assertEqual(read.call_args.args[0],'http://10.10.10.40:11080/ajax/general/get_config?type=18')
+    def test_unknown_or_missing_read_is_unavailable(self):
+        for xml in ['<FrontPanel/>','<FrontPanel><IlluminationBrightness>6</IlluminationBrightness></FrontPanel>','<Other><IlluminationBrightness>1</IlluminationBrightness></Other>']:
+            with patch.object(server,'read_xml',return_value=server.ET.fromstring(xml)):
+                with self.assertRaises(ValueError):server.read_illumination('10.10.10.40',11080)
+    def test_write_is_allowlisted_and_changes_only_illumination(self):
+        with patch.object(server,'receiver_http',return_value=b'') as http:
+            server.write_illumination('10.10.10.40',11080,'5')
+            query=server.urllib.parse.parse_qs(server.urllib.parse.urlsplit(http.call_args.args[0]).query)
+            self.assertEqual(query,{'type':['18'],'data':['<IlluminationBrightness>5</IlluminationBrightness>']})
+            with self.assertRaises(ValueError):server.write_illumination('10.10.10.40',11080,'6')
+    def ready(self):
+        r=server.Receiver();r.state.update(connected=True,power='On',illumination='1',illumination_updated_at=time.time());r.last_received=time.monotonic();return r
+    def test_only_readback_confirms_setting(self):
+        r=self.ready()
+        with patch.object(server,'write_illumination') as write,patch.object(server,'read_illumination',return_value='3'):
+            r.execute('IL3',-10)
+            self.assertEqual(r.snapshot()['illumination'],'3');self.assertEqual(r.state['command']['status'],'confirmed');write.assert_called_once()
+        r=self.ready()
+        with patch.object(server,'write_illumination'),patch.object(server,'read_illumination',return_value='1'):
+            r.execute('IL3',-10);self.assertEqual(r.state['command']['status'],'unconfirmed');self.assertEqual(r.snapshot()['illumination'],'1')
+    def test_stale_read_cannot_enable_controls(self):
+        r=self.ready();r.state['illumination_updated_at']-=20
+        self.assertIsNone(r.snapshot()['illumination'])
+        with patch.object(server,'write_illumination') as write:
+            with self.assertRaises(ValueError):r.execute('IL2',-10)
+            write.assert_not_called()
+    def test_late_poll_after_command_is_discarded(self):
+        r=self.ready()
+        def late(*args):
+            r.illumination_epoch+=1;r.state['illumination']='5';return '1'
+        with patch.object(server,'read_illumination',side_effect=late):r.refresh_illumination()
+        self.assertEqual(r.state['illumination'],'5')
+
+class IlluminationPowerTests(unittest.TestCase):
+    def test_power_cycle_does_not_restore_previous_reading(self):
+        r=server.Receiver();r.state.update(connected=True,power='On',illumination='2',illumination_updated_at=time.time());r.last_received=time.monotonic()
+        r.receive('PWSTANDBY');r.receive('PWON')
+        self.assertIsNone(r.snapshot()['illumination'])

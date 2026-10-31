@@ -13,6 +13,7 @@ public final class ReceiverConnection implements AutoCloseable {
         default void capabilities(List<ReceiverHttp.Choice> inputs,List<ReceiverHttp.Choice> modes){}
         default void feedback(boolean pending,String message){}
         default void channels(SpeakerChannels.Panel input,SpeakerChannels.Panel output){}
+        default void illumination(String value){}
     }
     private final ChannelMonitor channelMonitor;private String routePower="",routeInput="",routeFormat="";
     private final String host;private final Listener listener;private final ReceiverHttp http;
@@ -21,17 +22,25 @@ public final class ReceiverConnection implements AutoCloseable {
     private volatile double limit=-10;private volatile Double volume=null;private volatile long volumeAt=0,lastReceivedAt=0;
     private final Map<String,ReceiverHttp.Choice> advertised=new ConcurrentHashMap<>();
     private volatile Boolean tone=null,lfc=null;private volatile Integer bass=null;private volatile String mode="";
+    private volatile String illumination=null;private volatile long illuminationAt=0;
     private String expected=null;private long deadline=0;
     public ReceiverConnection(String host,Listener listener){
         if(!Protocol.localAddress(host))throw new IllegalArgumentException("Private IPv4 required");
         this.host=host;this.listener=listener;http=new ReceiverHttp(host);
-        channelMonitor=new ChannelMonitor(http::channels,listener::channels);channelMonitor.start();
+        channelMonitor=new ChannelMonitor(new ChannelMonitor.Source(){
+            public SpeakerChannels.Panel read(boolean input)throws Exception{return http.channels(input);}
+            public String illumination()throws Exception{return http.illumination();}
+        },new ChannelMonitor.Listener(){
+            public void channels(SpeakerChannels.Panel in,SpeakerChannels.Panel out){listener.channels(in,out);}
+            public void illumination(String value){ReceiverConnection.this.illumination=value;illuminationAt=System.nanoTime()/1000000;listener.illumination(value);}
+        });channelMonitor.start();
         Thread worker=new Thread(this::run,"receiver");worker.setDaemon(true);worker.start();
     }
     public void setLimit(double value){if(Double.isNaN(value)||value < -60||value > 0)throw new IllegalArgumentException("Invalid volume limit");limit=value;}
     public synchronized String submit(String cmd){
         if(!running||!connected)return "Receiver is disconnected. Retrying automatically.";
         if(System.currentTimeMillis()-lastReceivedAt>12000)return "Waiting for fresh receiver status.";
+        if(cmd.matches("IL[1-5]")&&(illumination==null||System.nanoTime()/1000000-illuminationAt>12000))return "Waiting for fresh LED illumination status.";
         if(waiting&&!cmd.matches("MV(UP|DOWN|[0-9]{2,3})|PSBAS (UP|DOWN)"))return "Wait for the current command to finish.";
         if((cmd.startsWith("SI")||cmd.startsWith("MODE:"))?!advertised.containsKey(cmd):!Protocol.allowed(cmd))return "This control is not advertised by the receiver.";
         if(!commands.offer(cmd)){return "Command queue is busy.";}waiting=true;return null;
@@ -68,7 +77,14 @@ public final class ReceiverConnection implements AutoCloseable {
                     if(cmd!=null){
                         listener.feedback(true,"Waiting for receiver confirmation…");
                         try{
-                            if(cmd.startsWith("MODE:")){
+                            if(cmd.matches("IL[1-5]")){
+                                channelMonitor.invalidate();
+                                try{
+                                    String selected=http.setIllumination(cmd.substring(2));
+                                    if(!running)break;
+                                    channelMonitor.invalidate();illumination=selected;illuminationAt=System.nanoTime()/1000000;listener.illumination(selected);finish("Confirmed by receiver");
+                                }catch(Exception e){channelMonitor.invalidate();throw e;}
+                            }else if(cmd.startsWith("MODE:")){
                                 String selected=http.selectMode(cmd,advertised.get(cmd).rawLabel);
                                 if(!running)break;
                                 accept("SYSMI "+selected);write(out,"MS?");finish("Confirmed by receiver");
